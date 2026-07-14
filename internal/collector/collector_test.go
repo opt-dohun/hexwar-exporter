@@ -1,102 +1,16 @@
-package main
+package collector
 
 import (
-	"encoding/json"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/Penny-B1t/hexwar-exporter/internal/client"
+	"github.com/Penny-B1t/hexwar-exporter/internal/config"
 )
-
-// --- config 테스트 ---
-
-func TestParseTargets(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    int
-		wantErr bool
-	}{
-		{"단일 노드", "server-1=http://host:5000/api/diagnostics/stats", 1, false},
-		{"다중 노드", "server-1=http://a:5000/x,server-2=http://b:5000/x", 2, false},
-		{"빈 문자열", "", 0, false},
-		{"잘못된 형식(= 없음)", "server-1", 0, true},
-		{"빈 URL", "server-1=", 0, true},
-		{"공백 포함", " server-1 = http://a:5000/x ", 1, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseTargets(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, wantErr = %v", err, tt.wantErr)
-			}
-			if len(got) != tt.want {
-				t.Fatalf("개수 = %d, want = %d", len(got), tt.want)
-			}
-		})
-	}
-}
-
-// --- ServerStats JSON 매핑 테스트 (핵심) ---
-// ASP.NET Core의 camelCase 직렬화와 정확히 매칭되는지 검증한다.
-// 태그가 하나라도 틀리면 값이 0이 되므로 즉시 발견된다.
-
-func TestServerStatsJSONDecode(t *testing.T) {
-	// HexWar /api/diagnostics/stats의 실제 응답 형태(camelCase)
-	raw := `{
-		"timestamp": "2026-07-13T10:30:00Z",
-		"workingSetMB": 156.34,
-		"privateMemoryMB": 182.51,
-		"gcHeapMB": 97.89,
-		"gcGen0": 6,
-		"gcGen1": 2,
-		"gcGen2": 1,
-		"totalSessions": 1000,
-		"activeSessions": 980,
-		"gameOverSessions": 20,
-		"totalConnections": 2000,
-		"estimatedMemoryPerSessionKB": 50.12
-	}`
-
-	var stats ServerStats
-	if err := json.Unmarshal([]byte(raw), &stats); err != nil {
-		t.Fatalf("디코딩 실패: %v", err)
-	}
-
-	// GC 최적화 핵심 지표 — 잘못된 태그면 0이 됨
-	if stats.GCGen2 != 1 {
-		t.Errorf("GCGen2 = %d, want 1", stats.GCGen2)
-	}
-	if stats.GCGen1 != 2 {
-		t.Errorf("GCGen1 = %d, want 2", stats.GCGen1)
-	}
-	if stats.GCGen0 != 6 {
-		t.Errorf("GCGen0 = %d, want 6", stats.GCGen0)
-	}
-	if stats.GCHeapMB != 97.89 {
-		t.Errorf("GCHeapMB = %f, want 97.89", stats.GCHeapMB)
-	}
-	if stats.WorkingSetMB != 156.34 {
-		t.Errorf("WorkingSetMB = %f, want 156.34", stats.WorkingSetMB)
-	}
-	if stats.TotalSessions != 1000 {
-		t.Errorf("TotalSessions = %d, want 1000", stats.TotalSessions)
-	}
-	if stats.ActiveSessions != 980 {
-		t.Errorf("ActiveSessions = %d, want 980", stats.ActiveSessions)
-	}
-	if stats.GameOverSessions != 20 {
-		t.Errorf("GameOverSessions = %d, want 20", stats.GameOverSessions)
-	}
-	if stats.TotalConnections != 2000 {
-		t.Errorf("TotalConnections = %d, want 2000", stats.TotalConnections)
-	}
-	if stats.EstimatedMemoryPerSessionKB != 50.12 {
-		t.Errorf("EstimatedMemoryPerSessionKB = %f, want 50.12", stats.EstimatedMemoryPerSessionKB)
-	}
-}
 
 // --- 단위 변환 테스트 ---
 
@@ -116,18 +30,18 @@ func TestUnitConversions(t *testing.T) {
 }
 
 // --- collector 테스트 (핵심) ---
-// nodePoller 인터페이스를 통해 HTTP 없이 fake 클라이언트로 검증한다.
+// NodePoller 인터페이스를 통해 HTTP 없이 fake 클라이언트로 검증한다.
 
-// fakePoller는 nodePoller 인터페이스를 구현하는 테스트 더블이다.
+// fakePoller는 client.NodePoller 인터페이스를 구현하는 테스트 더블이다.
 type fakePoller struct {
-	target Target
-	last   sampleResult
+	target config.Target
+	last   client.SampleResult
 }
 
-func (f *fakePoller) Target() Target     { return f.target }
-func (f *fakePoller) Last() sampleResult { return f.last }
+func (f *fakePoller) Target() config.Target     { return f.target }
+func (f *fakePoller) Last() client.SampleResult { return f.last }
 
-func newCollectorWithFakes(t *testing.T, pollers []nodePoller) (*Collector, chan prometheus.Metric) {
+func newCollectorWithFakes(t *testing.T, pollers []client.NodePoller) (*Collector, chan prometheus.Metric) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(&discardWriter{}, nil))
 	c := NewCollector(NewMetrics(), pollers, logger)
@@ -139,7 +53,7 @@ func newCollectorWithFakes(t *testing.T, pollers []nodePoller) (*Collector, chan
 }
 
 func TestCollector_SuccessfulNode(t *testing.T) {
-	stats := ServerStats{
+	stats := client.ServerStats{
 		WorkingSetMB:                156.34,
 		PrivateMemoryMB:             182.51,
 		GCHeapMB:                    97.89,
@@ -152,10 +66,10 @@ func TestCollector_SuccessfulNode(t *testing.T) {
 		TotalConnections:            2000,
 		EstimatedMemoryPerSessionKB: 50.12,
 	}
-	pollers := []nodePoller{
+	pollers := []client.NodePoller{
 		&fakePoller{
-			target: Target{Name: "server-1"},
-			last:   sampleResult{stats: stats, fetchedAt: time.Now()},
+			target: config.Target{Name: "server-1"},
+			last:   client.SampleResult{Stats: stats, FetchedAt: time.Now()},
 		},
 	}
 
@@ -189,14 +103,14 @@ func TestCollector_SuccessfulNode(t *testing.T) {
 func TestCollector_FailedNodeIsolation(t *testing.T) {
 	// server-1은 폴링 실패, server-2는 정상
 	// 실패 노드는 exporter_up=0만 노출, 다른 노드 메트릭은 정상
-	pollers := []nodePoller{
+	pollers := []client.NodePoller{
 		&fakePoller{
-			target: Target{Name: "server-1"},
-			last:   sampleResult{err: errDummy, fetchedAt: time.Now()},
+			target: config.Target{Name: "server-1"},
+			last:   client.SampleResult{Err: errDummy, FetchedAt: time.Now()},
 		},
 		&fakePoller{
-			target: Target{Name: "server-2"},
-			last:   sampleResult{stats: ServerStats{TotalConnections: 500}, fetchedAt: time.Now()},
+			target: config.Target{Name: "server-2"},
+			last:   client.SampleResult{Stats: client.ServerStats{TotalConnections: 500}, FetchedAt: time.Now()},
 		},
 	}
 
@@ -217,8 +131,8 @@ func TestCollector_FailedNodeIsolation(t *testing.T) {
 
 func TestCollector_FreshPollingNotYetDone(t *testing.T) {
 	// 아직 폴링 전(fetchedAt 제로값): up=0만 노출, 패닉 없음
-	pollers := []nodePoller{
-		&fakePoller{target: Target{Name: "server-1"}},
+	pollers := []client.NodePoller{
+		&fakePoller{target: config.Target{Name: "server-1"}},
 	}
 	_, ch := newCollectorWithFakes(t, pollers)
 	metrics := collectMetrics(t, ch)
@@ -237,12 +151,6 @@ func newDummyError() error          { return &dummyError{msg: "connection refuse
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
-
-// metricKey는 메트릭 이름+라벨 조합의 식별자다.
-type metricKey struct {
-	name   string
-	labels string // "k=v,k=v" 정렬된 형태
-}
 
 type collectedMetric struct {
 	name   string

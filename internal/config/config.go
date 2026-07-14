@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"flag"
@@ -10,8 +10,6 @@ import (
 
 // Config는 exporter의 실행 설정을 담는다.
 type Config struct {
-	// Targets는 폴링할 HexWar 서버 노드의 "이름=URL" 목록이다.
-	// 예: "server-1=http://hexwar-server-1:5000/api/diagnostics/stats"
 	Targets []Target
 
 	// ScrapeInterval은 각 노드를 폴링하는 주기다.
@@ -20,15 +18,12 @@ type Config struct {
 	// ScrapeTimeout은 1회 폴링 HTTP 요청의 타임아웃이다.
 	ScrapeTimeout time.Duration
 
-	// ListenAddr은 /metrics 엔드포인트의 수신 주소다.
 	ListenAddr string
 }
 
-// Target은 폴링 대상 노드 하나를 나타낸다.
-// Name은 Prometheus 메트릭의 node 라벨 값이 된다.
 type Target struct {
 	Name string
-	URL  string // 예: http://hexwar-server-1:5000/api/diagnostics/stats
+	URL  string
 }
 
 // DefaultConfig는 플래그/환경변수가 없을 때의 기본값이다.

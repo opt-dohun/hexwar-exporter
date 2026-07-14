@@ -14,10 +14,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # 소스 복사 후 빌드
-COPY *.go ./
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 # -s -w: 심벌 테이블·DWARF 정보 제거 → 바이너리 크기 ~30% 감소
 # -extldflags "-static": 외부 링커에 정적 링크 지시 (CGO_ENABLED=0과 중복되지만 명시)
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o hexwar-exporter .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o hexwar-exporter ./cmd/hexwar-exporter
 
 # ── 스테이지 2: 실행 ──
 # alpine: ~5MB의 경량 리눅스. CA 인증서(HTTPS 폴링용)와 쉘(디버깅용)이 포함됨.
@@ -30,7 +31,7 @@ FROM alpine:3.20
 # tzdata: 로그 타임스탬프의 표준 시간대 설정용
 RUN apk add --no-cache ca-certificates tzdata
 
-# 비루트 사용자로 실행 (보안 모범 사례)
+# 비루트 사용자로 실행 
 RUN adduser -D -u 10000 exporter
 USER exporter
 

@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"context"
@@ -10,10 +10,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Penny-B1t/hexwar-exporter/internal/config"
 )
 
 // ServerStats는 HexWar /api/diagnostics/stats의 JSON 응답을 매핑한다.
-// ASP.NET Core 기본 직렬화가 camelCase이므로 태그도 camelCase로 맞춘다.
 type ServerStats struct {
 	Timestamp                   time.Time `json:"timestamp"`
 	WorkingSetMB                float64   `json:"workingSetMB"`
@@ -29,34 +30,31 @@ type ServerStats struct {
 	EstimatedMemoryPerSessionKB float64   `json:"estimatedMemoryPerSessionKB"`
 }
 
-// sampleResult는 1회 폴링 결과(성공 또는 실패)를 담는다.
-type sampleResult struct {
-	stats     ServerStats
-	err       error
-	duration  time.Duration
-	fetchedAt time.Time
+// SampleResult는 1회 폴링 결과(성공 또는 실패)를 담는다.
+type SampleResult struct {
+	Stats     ServerStats
+	Err       error
+	Duration  time.Duration
+	FetchedAt time.Time
 }
 
-// nodePoller는 폴링 대상 노드 하나의 최신 결과를 제공하는 인터페이스다.
-// NodeClient만이 구현하며, 테스트에서는 fake 클라이언트로 대체할 수 있다.
-// 이 인터페이스 덕분에 collector 테스트가 HTTP 서버 없이 동작한다.
-type nodePoller interface {
-	Target() Target
-	Last() sampleResult
+type NodePoller interface {
+	Target() config.Target
+	Last() SampleResult
 }
 
 // NodeClient는 단일 노드를 주기적으로 폴링해 최신 결과를 저장한다.
 type NodeClient struct {
-	target Target
+	target config.Target
 	http   *http.Client
 	logger *slog.Logger
 
 	mu   sync.RWMutex
-	last sampleResult // 가장 최근 폴링 결과
+	last SampleResult // 가장 최근 폴링 결과
 }
 
 // NewNodeClient는 단일 노드 폴링 클라이언트를 만든다.
-func NewNodeClient(target Target, timeout time.Duration, logger *slog.Logger) *NodeClient {
+func NewNodeClient(target config.Target, timeout time.Duration, logger *slog.Logger) *NodeClient {
 	return &NodeClient{
 		target: target,
 		http: &http.Client{
@@ -72,11 +70,12 @@ func NewNodeClient(target Target, timeout time.Duration, logger *slog.Logger) *N
 	}
 }
 
-// Target은 폴링 대상 정보를 반환한다 (nodePoller 구현).
-func (c *NodeClient) Target() Target { return c.target }
+// Target은 폴링 대상 정보를 반환한다 (NodePoller 구현).
+func (c *NodeClient) Target() config.Target { return c.target }
 
 // Run은 ctx가 취소될 때까지 interval마다 폴링한다.
 // 각 노드마다 별도 goroutine에서 실행된다.
+// 지수 알고리즘 보다는 서킷 브레이크 알고리즘 도입을 통하여 장애발생 상황에 대처하는 능력 어필 필요
 func (c *NodeClient) Run(ctx context.Context, interval time.Duration) {
 	c.logger.Info("노드 폴링 시작",
 		"node", c.target.Name, "url", c.target.URL, "interval", interval.String())
@@ -105,11 +104,11 @@ func (c *NodeClient) poll(ctx context.Context) {
 	stats, err := c.fetch(ctx)
 
 	c.mu.Lock()
-	c.last = sampleResult{
-		stats:     stats,
-		err:       err,
-		duration:  time.Since(start),
-		fetchedAt: time.Now(),
+	c.last = SampleResult{
+		Stats:     stats,
+		Err:       err,
+		Duration:  time.Since(start),
+		FetchedAt: time.Now(),
 	}
 	c.mu.Unlock()
 
@@ -151,13 +150,13 @@ func (c *NodeClient) fetch(ctx context.Context) (ServerStats, error) {
 	return stats, nil
 }
 
-// Last는 가장 최근 폴링 결과를 반환한다 (스레드 안전, nodePoller 구현).
+// Last는 가장 최근 폴링 결과를 반환한다 (스레드 안전, NodePoller 구현).
 // collector가 /metrics 스크랩 시점에 호출한다.
-func (c *NodeClient) Last() sampleResult {
+func (c *NodeClient) Last() SampleResult {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.last
 }
 
 // 컴파일 타임 인터페이스 구현 보장
-var _ nodePoller = (*NodeClient)(nil)
+var _ NodePoller = (*NodeClient)(nil)

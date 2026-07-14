@@ -13,11 +13,15 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/Penny-B1t/hexwar-exporter/internal/client"
+	"github.com/Penny-B1t/hexwar-exporter/internal/collector"
+	"github.com/Penny-B1t/hexwar-exporter/internal/config"
 )
 
 func main() {
 	// 1. 설정 로드
-	cfg, err := LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("설정 로드 실패", "err", err)
 		os.Exit(1)
@@ -35,9 +39,9 @@ func main() {
 	)
 
 	// 2. 노드별 폴링 클라이언트 생성
-	clients := make([]*NodeClient, 0, len(cfg.Targets))
+	clients := make([]*client.NodeClient, 0, len(cfg.Targets))
 	for _, t := range cfg.Targets {
-		clients = append(clients, NewNodeClient(t, cfg.ScrapeTimeout, logger))
+		clients = append(clients, client.NewNodeClient(t, cfg.ScrapeTimeout, logger))
 	}
 
 	// 3. 컨텍스트: SIGINT/SIGTERM으로 전체 폴링 루프를 한 번에 종료
@@ -47,24 +51,24 @@ func main() {
 
 	// 4. 각 노드 폴링 루프를 별도 goroutine으로 시작 (동시 폴링)
 	var wg sync.WaitGroup
-	for _, client := range clients {
+	for _, c := range clients {
 		wg.Add(1)
-		go func(c *NodeClient) {
+		go func(nc *client.NodeClient) {
 			defer wg.Done()
-			c.Run(ctx, cfg.ScrapeInterval)
-		}(client)
+			nc.Run(ctx, cfg.ScrapeInterval)
+		}(c)
 	}
 
-	// 5. nodePoller 슬라이스로 변환해 collector에 주입
-	pollers := make([]nodePoller, 0, len(clients))
+	// 5. NodePoller 슬라이스로 변환해 collector에 주입
+	pollers := make([]client.NodePoller, 0, len(clients))
 	for _, c := range clients {
 		pollers = append(pollers, c)
 	}
 
 	// 6. Prometheus collector 등록 (커스텀 레지스트리 사용)
 	registry := prometheus.NewRegistry()
-	collector := NewCollector(NewMetrics(), pollers, logger)
-	registry.MustRegister(collector)
+	coll := collector.NewCollector(collector.NewMetrics(), pollers, logger)
+	registry.MustRegister(coll)
 	// exporter 자체 메트릭(go_*, process_*)도 함께 노출
 	registry.MustRegister(prometheus.NewGoCollector())
 	registry.MustRegister(prometheus.NewProcessCollector(
@@ -122,7 +126,7 @@ func main() {
 }
 
 // targetNames는 로깅용으로 타깃 이름만 추출한다.
-func targetNames(targets []Target) []string {
+func targetNames(targets []config.Target) []string {
 	names := make([]string, len(targets))
 	for i, t := range targets {
 		names[i] = t.Name
