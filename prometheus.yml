@@ -1,0 +1,43 @@
+# Prometheus 설정
+# HexWar 관측가능성 파이프라인의 메트릭 수집기.
+# hexwar-exporter(Go)가 수집한 HexWar 서버 메트릭을 주기적으로 스크랩한다.
+
+global:
+  # 모든 job의 기본 스크랩 주기. 15초마다 각 대상의 /metrics를 GET.
+  scrape_interval: 15s
+
+  # 모든 job의 기본 스크랩 타임아웃. 대상이 10초 내에 응답하지 않으면 실패 처리.
+  scrape_timeout: 10s
+
+  # alert 룰 평가 주기. 15초마다 모든 alert 룰의 expr을 계산하여 임계 초과 여부를 판단.
+  evaluation_interval: 15s
+
+  # Prometheus 자체 메트릭의 라벨. 여러 Prometheus 인스턴스를 구분할 때 사용.
+  external_labels:
+    cluster: 'hexwar-local'
+
+# alert 룰 파일 로드. 경로는 Prometheus 컨테이너 내부 기준.
+rule_files:
+  - 'alerts.yml'
+
+# 스크랩 대상 정의
+scrape_configs:
+  # ── 1. hexwar-exporter: HexWar 서버 메트릭 ──
+  # hexwar-exporter가 hexwar-server-1/2를 폴링한 결과를 Prometheus 포맷으로 노출.
+  # Prometheus는 이 엔드포인트를 스크랩해 시계열을 저장한다.
+  - job_name: 'hexwar-exporter'
+    scrape_interval: 15s
+    static_configs:
+      # Docker Compose 내부 DNS: 서비스명(hexwar-exporter)이 호스트명.
+      # 포트 9091은 exporter가 /metrics를 리슨하는 포트.
+      - targets: ['hexwar-exporter:9091']
+        labels:
+          # 라벨 부착으로 Grafana에서 데이터 소스 식별 용이
+          service: 'hexwar-game-server'
+
+  # ── 2. Prometheus 자체 모니터링 ──
+  # Prometheus의 자체 성능(메모리, 스크랩 지연, TSDB 크기 등)을 수집.
+  # Prometheus가 자기 자신을 스크랩하는 패턴은 운영에서 표준적이다.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

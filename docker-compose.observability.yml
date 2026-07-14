@@ -1,0 +1,122 @@
+# HexWar 관측가능성 오버레이
+# ────────────────────────
+# 기존 docker-compose.yml을 수정 없이 관측 파이프라인을 추가한다.
+# 실행법 (HexWar 프로젝트 루트에서):
+#   docker compose -f docker-compose.yml -f infra/docker-compose.observability.yml up -d
+#
+# 또는 이 파일만 단독으로 테스트할 때:
+#   docker compose -f docker-compose.observability.yml up -d
+#
+# 병합 규칙: Docker Compose가 -f 파일들을 순서대로 병합.
+#   기존 서비스(redis, server-1, server-2, nginx)는 그대로 유지.
+#   이 파일에 정의된 서비스(exporter, prometheus)가 추가됨.
+
+version: "3.8"
+
+services:
+  # ── hexwar-exporter: HexWar 서버 메트릭 수집기 ──
+  # Go 바이너리. 각 노드의 /api/diagnostics/stats를 5초마다 폴링하여
+  # Prometheus 포맷을 /metrics에서 노출한다.
+  hexwar-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hexwar-exporter
+    # 기존 HexWar 서버들이 수신 대기할 때까지 기다리지 않고 바로 시작.
+    # 폴링 실패는 내부적으로 에러 격리 처리되므로 무해.
+    restart: unless-stopped
+    environment:
+      # name=url 형태. hexwar-server-1/2는 기존 docker-compose.yml에 정의된 서비스명(=Docker 내부 DNS).
+      # 포트 5000은 hexwar-server 컨테이너 내부의 Kestrel 리슨 포트.
+      - HEXWAR_TARGETS=server-1=http://hexwar-server-1:5000/api/diagnostics/stats,server-2=http://hexwar-server-2:5000/api/diagnostics/stats
+      - HEXWAR_SCRAPE_INTERVAL=5s
+      - HEXWAR_SCRAPE_TIMEOUT=3s
+      - HEXWAR_LISTEN=:9091
+    ports:
+      - "9091:9091"   # 호스트에서 exporter 메트릭 직접 확인용
+    networks:
+      # 기존 docker-compose.yml에 정의된 hexwar-network에 참여.
+      # 같은 브릿지 네트워크 → 서비스명으로 서로 통신 가능.
+      - hexwar-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ── prometheus: 메트릭 수집·저장·알람 엔진 ──
+  # hexwar-exporter의 /metrics를 15s마다 스크랩하여 시계열 DB에 저장.
+  # alert 룰을 주기적으로 평가하여 임계 초과 시 alert 상태로 전이.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: hexwar-prometheus
+    restart: unless-stopped
+    volumes:
+      # 이 레포지토리의 prometheus.yml, alerts.yml을 컨테이너에 읽기 전용으로 마운트.
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Prometheus TSDB(시계열 DB) 영속화. 컨테이너 재시작해도 과거 메트릭 보존.
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=1h'     # 메트릭 보존 기간 (개발/테스트용 짧은 설정)
+      - '--storage.tsdb.retention.size=64MB'   # TSDB 최대 크기
+      - '--web.enable-remote-write-receiver'   # 향후 원격 쓰기 수신용 (확장 대비)
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"   # 호스트에서 Prometheus UI 및 API 접근용
+    networks:
+      - hexwar-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── grafana: 시각화 대시보드 ──
+  # Prometheus에서 PromQL로 데이터를 조회해 차트로 렌더링.
+  # Grafana 자체는 데이터를 저장하지 않고, 조회 시마다 Prometheus에 질의한다.
+  # 시작 시 provisioning/ 폴더를 읽어 Data Source와 대시보드를 자동 등록한다.
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: hexwar-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      # 관리자 계정 (개발/데모용 간단한 값. 운영 배포 시 시크릿으로 분리 필요)
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # 익명 접근 허용 (포트폴리오 데모 시 로그인 생략)
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      # 프로비저닝 로그 레벨 (디버깅 시 debug로 변경)
+      - GF_LOG_LEVEL=info
+    volumes:
+      # Data Source 자동 등록 (Prometheus 연결)
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      # 대시보드 자동 로드 설정 (어느 폴더를 스캔할지)
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      # 대시보드 JSON 파일들 (dashboards.yml의 path로 마운트)
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"   # 호스트에서 Grafana UI 접근용 (http://localhost:3000)
+    networks:
+      - hexwar-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# 기존 docker-compose.yml에 정의된 볼륨과 동일한 네트워크 이름을 참조.
+# Docker Compose가 자동으로 동일한 브릿지 네트워크에 배치.
+# 볼륨은 이 오버레이에서만 사용하므로 여기에 정의.
+volumes:
+  prometheus-data:
+    driver: local
+
+networks:
+  hexwar-network:
+    external: true    # 기존 docker-compose.yml에서 생성한 네트워크를 사용 (중복 생성 방지)

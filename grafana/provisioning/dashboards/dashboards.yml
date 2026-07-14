@@ -1,0 +1,22 @@
+# Grafana Dashboard 프로비저닝
+# ───────────────────────
+# Grafana가 "어디서, 어떤 대시보드 JSON을 로드할지"를 정의한다.
+# providers 아래에 등록된 폴더를 주기적으로 스캔하여 JSON 파일을 자동 임포트한다.
+# 컨테이너 시작 시 1회 + 이후 변경 시 자동 갱신(기본 10초 폴링).
+
+apiVersion: 1
+
+providers:
+  - name: 'hexwar-dashboards'
+    # Grafana 내부 식별자
+    orgId: 1
+    # 대시보드 JSON 파일이 위치한 폴더 (컨테이너 내부 경로).
+    # docker-compose에서 이 경로로 볼륨 마운트한다.
+    folder: 'HexWar'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # Grafana가 스캔할 경로. compose에서 ./grafana/dashboards를 여기로 마운트.
+      path: /var/lib/grafana/dashboards

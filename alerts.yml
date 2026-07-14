@@ -1,0 +1,62 @@
+# HexWar 경고 규칙
+# Prometheus가 evaluation_interval(15s)마다 각 expr을 평가하여 임계 초과 시 alert를 발동한다.
+# for: Nm 은 조건이 N분간 지속되어야만 Firing 상태로 전이함.
+# 순간적인 스파이크(네트워크 순단 등)는 자동으로 무시된다.
+
+groups:
+  - name: hexwar-alerts
+    rules:
+      # ── 1. 노드 다운 감지 ──
+      # Prometheus 내장 메트릭 up은 각 스크랩 대상의 마지막 응답 성공 여부.
+      # up==0이면 Prometheus가 exporter에 연결하지 못했다는 뜻.
+      # 원인: exporter 컨테이너 종료, 네트워크 분리, 포트 바인딩 실패 등.
+      - alert: HexWarNodeDown
+        expr: up{job="hexwar-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HexWar Exporter 응답 없음"
+          description: "Exporter {{ $labels.instance }}에 1분간 연결할 수 없습니다. 네트워크 또는 컨테이너 상태를 확인하세요."
+
+      # ── 2. Gen2 GC 과다 (성능 저하 지표) ──
+      # rate(): counter 타입 메트릭의 초당 증가율을 계산.
+      # [5m]: 지난 5분 윈도우에서의 평균값.
+      # HexWar 최적화 이후: Gen2가 300초에 1회 → rate ≈ 0.0033/s.
+      # 임계치 0.008/s (분당 ~0.48회)를 초과하면 비정상으로 판단.
+      # Gen2 GC는 모든 스레드를 일시 정지(STW)하므로 지연에 직접 영향.
+      - alert: HexWarHighGen2GCRate
+        expr: rate(hexwar_gc_collections_total{gen="2"}[5m]) > 0.008
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gen2 GC 발생률 높음 — node={{ $labels.node }}"
+          description: "Gen2 GC가 초당 {{ $value | printf \"%.4f\" }}회 발생 중 (임계: 0.008/s). 메모리 할당 패턴이나 힙 크기를 점검하세요."
+
+      # ── 3. GC 힙 크기 급증 (메모리 릭 의심) ──
+      # predict_linear(): 현재 추세가 지속될 경우 N분 후의 예측값.
+      # GC 힙이 현재 속도로 증가하면 30분 후 200MB를 초과하는지 예측.
+      # HexWar 최적화 이후 안정값: ~98MB (1000룸 기준).
+      # 200MB를 초과하면 세션 경량화 설계에 문제가 있거나 메모리 릭 의심.
+      - alert: HexWarHighGCMemory
+        expr: predict_linear(hexwar_gc_heap_bytes[10m], 30 * 60) > 200 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GC 힙 메모리 증가 추세 — node={{ $labels.node }}"
+          description: "GC 힙이 현재 추세로 30분 후 {{ $value | printf \"%.0f\" }}바이트를 초과할 것으로 예측됩니다."
+
+      # ── 4. 활성 세션 대비 커넥션 부족 (연결 유실 의심) ──
+      # HexWar는 2인 게임이므로 "세션 수 × 2 = 예상 커넥션 수"가 정상.
+      # 실제 커넥션이 예상의 80% 미만이면 일부 클라이언트 연결이 유실된 것.
+      # 가능 원인: Nginx 499 에러, 네트워크 순단, 서버 재시작 중 세션-커넥션 불일치.
+      - alert: HexWarConnectionMismatch
+        expr: hexwar_connections < hexwar_sessions{state="total"} * 1.6
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "커넥션-세션 불일치 — node={{ $labels.node }}"
+          description: "활성 세션({{ $labels.node }}) 대비 WebSocket 커넥션이 예상보다 적습니다. 연결 유실을 확인하세요."

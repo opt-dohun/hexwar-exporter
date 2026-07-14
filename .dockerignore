@@ -1,0 +1,28 @@
+# 빌드 산출물 (컨테이너에 불필요)
+bin/
+*.exe
+*.test
+*.out
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Docker (자기 자신은 제외)
+docker-compose*.yml
+
+# 문서 (빌드 컨텍스트 크기 감소)
+*.md
+
+# 테스트 파일 (런타임에 불필요)
+*_test.go
+testdata/

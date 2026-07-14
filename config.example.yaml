@@ -1,0 +1,17 @@
+# HexWar Exporter 설정 예시
+# ─────────────────────
+# docker-compose.observability.yml에서는 환경변수로 주입하므로 이 파일은 직접 사용되지 않음.
+# 로컬 실행 시 참고용.
+
+# 폴링 대상 노드. "이름=URL,이름=URL" 형태.
+# name은 Prometheus 메트릭의 node 라벨 값이 된다.
+targets: "server-1=http://localhost:5000/api/diagnostics/stats,server-2=http://localhost:5001/api/diagnostics/stats"
+
+# 폴링 주기 (각 노드를 N초마다 HTTP GET으로 조회)
+scrape_interval: "5s"
+
+# 1회 폴링 타임아웃
+scrape_timeout: "3s"
+
+# /metrics 엔드포인트 수신 주소
+listen: ":9091"
