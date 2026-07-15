@@ -28,7 +28,7 @@ services:
     environment:
       # name=url 형태. hexwar-server-1/2는 기존 docker-compose.yml에 정의된 서비스명(=Docker 내부 DNS).
       # 포트 5000은 hexwar-server 컨테이너 내부의 Kestrel 리슨 포트.
-      - HEXWAR_TARGETS=server-1=http://hexwar-server-1:5000/api/diagnostics/stats,server-2=http://hexwar-server-2:5000/api/diagnostics/stats
+      - HEXWAR_TARGETS=game-server=http://host.docker.internal:5001/api/diagnostics/stats
       - HEXWAR_SCRAPE_INTERVAL=5s
       - HEXWAR_SCRAPE_TIMEOUT=3s
       - HEXWAR_LISTEN=:9091

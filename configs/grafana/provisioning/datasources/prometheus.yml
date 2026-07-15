@@ -8,13 +8,9 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
-    # Grafana가 지원하는 데이터 소스 타입 식별자 (Prometheus 플러그인)
+    uid: prometheus # 대시보드 JSON과 바인딩할 명시적 UID 추가
     type: prometheus
     access: proxy
-    # Docker Compose 내부 DNS: 같은 hexwar-network에 있으므로 서비스명으로 접근.
-    # Grafana 서버(백엔드)가 이 URL로 Prometheus에 쿼리를 날린다.
-    # access: proxy 이면 Grafana 백엔드가 대신 요청(CORS/인증 처리를 Grafana가 담당).
     url: http://prometheus:9090
-    # 이 데이터 소스를 대시보드 기본값으로 사용
     isDefault: true
     editable: true

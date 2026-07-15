@@ -1,7 +1,7 @@
 # ── 스테이지 1: 빌드 ──
 # golang 이미지는 Go 컴파일러와 표준 라이브러리를 포함한 커다란 이미지(~800MB).
 # 이 환경에서만 바이너리를 컴파일하고, 실행 환경에는 결과물만 전달한다.
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 
 # CGO_ENABLED=0: C 라이브러리 의존 없는 순수 정적 바이너리 생성.
 # 어느 리눅스 환경에서든 시스템 라이브러리 없이 실행 가능.

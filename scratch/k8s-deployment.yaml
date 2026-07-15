@@ -13,8 +13,8 @@ data:
   HEXWAR_SCRAPE_INTERVAL: "5s"
   HEXWAR_SCRAPE_TIMEOUT: "3s"
   HEXWAR_LISTEN: ":9091"
-  # 쉼표로 구분된 노드 타겟 리스트 예시
-  HEXWAR_TARGETS: "server-1=http://hexwar-node-1:5000/api/diagnostics/stats,server-2=http://hexwar-node-2:5000/api/diagnostics/stats"
+  # K8s 내부 DNS 규칙을 따르는 실제 C# 게임 서버 서비스 주소로 변경
+  HEXWAR_TARGETS: "game-server=http://hexwar-server.game:5000/api/diagnostics/stats"
 ---
 apiVersion: apps/v1
 kind: Deployment

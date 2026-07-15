@@ -1,0 +1,18 @@
+autoDiscovery:
+  clusterName: hexwar-cluster
+
+awsRegion: ap-northeast-2
+
+# env -> extraEnv (오브젝트 형식)로 변경하여 환경변수가 정상 주입되도록 함
+extraEnv:
+  AWS_ACCESS_KEY_ID: "test"
+  AWS_SECRET_ACCESS_KEY: "test"
+  AWS_EC2_METADATA_DISABLED: "true" # IMDS 조회 완전 비활성화로 타임아웃 차단
+  AWS_ENDPOINT: "http://host.k3d.internal:4566"
+  AWS_ENDPOINT_URL: "http://host.k3d.internal:4566"
+
+# LocalStack 호환을 위한 실행 아규먼트 추가
+extraArgs:
+  v: "4"
+  stderrthreshold: "info"
+  aws-use-static-instance-list: "true" # AWS 인스턴스 스펙 목록 실시간 질의 스킵

@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  localstack:
+    # latest 대신 무료 커뮤니티 모드로 강제 구동되는 3.8 안정 버전을 사용합니다.
+    image: localstack/localstack:3.8
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=ec2,autoscaling
+      - DISABLE_CUSTOM_DNS=1 # 1. 커스텀 DNS 서버 강제 비활성화 (macOS 파싱 충돌 회피)
+      - DNS_ADDRESS=8.8.8.8 # 2. DNS 주소를 구글 퍼블릭 DNS로 고정
+

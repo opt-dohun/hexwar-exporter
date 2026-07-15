@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: game
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hexwar-server
+  namespace: game
+  labels:
+    app: hexwar-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hexwar-server
+  template:
+    metadata:
+      labels:
+        app: hexwar-server
+    spec:
+      containers:
+      - name: server
+        image: hexwar-server-1:latest
+        imagePullPolicy: Never # k3d image import로 주입한 이미지 강제 참조
+        ports:
+        - containerPort: 5000
+          name: http
+        resources:
+          requests:
+            cpu: "50m"       # 0.05 코어 (빠른 스케일아웃 유도를 위해 극단적으로 작게 제한)
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        env:
+          - name: ASPNETCORE_ENVIRONMENT
+            value: "Production"
+          - name: ASPNETCORE_URLS
+            value: "http://+:5000"
+          - name: HEXWAR_NODE_NAME
+            value: "server-1" # 에이전트가 사용할 노드명 라벨
+          # OpenTelemetry Auto-Instrumentation 환경 변수 주입
+          - name: CORECLR_ENABLE_PROFILING
+            value: "1"
+          - name: CORECLR_PROFILER
+            value: "{918728C2-14F8-4d0b-9611-D6E26B79552C}"
+          - name: CORECLR_PROFILER_PATH
+            value: "/otel/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
+          - name: DOTNET_STARTUP_HOOKS
+            value: "/otel/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+          - name: OTEL_DOTNET_AUTO_HOME
+            value: "/otel"
+          - name: OTEL_METRICS_EXPORTER
+            value: "otlp"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://hexwar-otel-collector.monitoring.svc.cluster.local:4317"
+          - name: OTEL_DOTNET_AUTO_METRICS_ADDITIONAL_SOURCES
+            value: "HexWar.Diagnostics" # 커스텀 비즈니스 지표 연동
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hexwar-server
+  namespace: game
+spec:
+  ports:
+  - port: 5000
+    targetPort: http
+    name: http
+  selector:
+    app: hexwar-server
+  type: ClusterIP
