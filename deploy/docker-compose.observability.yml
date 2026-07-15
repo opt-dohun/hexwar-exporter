@@ -110,6 +110,26 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ── otel-collector: OpenTelemetry 메트릭 수집기 ──
+  # gRPC (4317)를 통해 메트릭을 수신받아 Prometheus 포맷으로 노출.
+  hexwar-otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.95.0
+    container_name: hexwar-otel-collector
+    restart: unless-stopped
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # gRPC 패킷 수신용 포트
+      - "4318:4318"   # HTTP 패킷 수신용 포트
+      - "8889:8889"   # Prometheus 스크랩용 포트
+    networks:
+      - hexwar-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 # 기존 docker-compose.yml에 정의된 볼륨과 동일한 네트워크 이름을 참조.
 # Docker Compose가 자동으로 동일한 브릿지 네트워크에 배치.
 # 볼륨은 이 오버레이에서만 사용하므로 여기에 정의.

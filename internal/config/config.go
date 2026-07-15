@@ -19,6 +19,9 @@ type Config struct {
 	ScrapeTimeout time.Duration
 
 	ListenAddr string
+
+	// MaxWorkers는 동시에 실행할 수집 워커 고루틴 수이다.
+	MaxWorkers int
 }
 
 type Target struct {
@@ -32,6 +35,7 @@ func DefaultConfig() Config {
 		ScrapeInterval: 5 * time.Second,
 		ScrapeTimeout:  3 * time.Second,
 		ListenAddr:     ":9091",
+		MaxWorkers:     50,
 	}
 }
 
@@ -45,6 +49,7 @@ func LoadConfig() (Config, error) {
 		interval   time.Duration
 		timeout    time.Duration
 		listen     string
+		maxWorkers int
 	)
 
 	flag.StringVar(&targetsRaw, "targets", "",
@@ -52,6 +57,7 @@ func LoadConfig() (Config, error) {
 	flag.DurationVar(&interval, "scrape.interval", 0, "폴링 주기 (예: 5s, 10s)")
 	flag.DurationVar(&timeout, "scrape.timeout", 0, "1회 폴링 타임아웃 (예: 3s)")
 	flag.StringVar(&listen, "listen", "", "/metrics 수신 주소 (예: :9091)")
+	flag.IntVar(&maxWorkers, "max.workers", 0, "동시 실행 수집 워커 수 (예: 50)")
 	flag.Parse()
 
 	// 플래그가 비어있으면 환경변수로 대체
@@ -67,10 +73,14 @@ func LoadConfig() (Config, error) {
 	if listen == "" {
 		listen = getenvStr("HEXWAR_LISTEN", cfg.ListenAddr)
 	}
+	if maxWorkers == 0 {
+		maxWorkers = getenvInt("HEXWAR_MAX_WORKERS", cfg.MaxWorkers)
+	}
 
 	cfg.ScrapeInterval = interval
 	cfg.ScrapeTimeout = timeout
 	cfg.ListenAddr = listen
+	cfg.MaxWorkers = maxWorkers
 
 	targets, err := parseTargets(targetsRaw)
 	if err != nil {
@@ -123,3 +133,14 @@ func getenvStr(key, fallback string) string {
 	}
 	return fallback
 }
+
+func getenvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		var val int
+		if _, err := fmt.Sscanf(v, "%d", &val); err == nil {
+			return val
+		}
+	}
+	return fallback
+}
+

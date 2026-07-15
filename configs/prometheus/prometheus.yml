@@ -35,7 +35,16 @@ scrape_configs:
           # 라벨 부착으로 Grafana에서 데이터 소스 식별 용이
           service: 'hexwar-game-server'
 
-  # ── 2. Prometheus 자체 모니터링 ──
+  # ── 2. otel-collector: OTel Push 기반 서버 메트릭 ──
+  # OTel Collector가 게임 서버로부터 Push 받은 메트릭을 /metrics에서 노출.
+  - job_name: 'otel-collector'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['hexwar-otel-collector:8889']
+        labels:
+          service: 'hexwar-otel-collector'
+
+  # ── 3. Prometheus 자체 모니터링 ──
   # Prometheus의 자체 성능(메모리, 스크랩 지연, TSDB 크기 등)을 수집.
   # Prometheus가 자기 자신을 스크랩하는 패턴은 운영에서 표준적이다.
   - job_name: 'prometheus'

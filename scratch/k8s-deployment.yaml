@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hexwar-exporter-config
+  namespace: monitoring
+data:
+  HEXWAR_MAX_WORKERS: "50"
+  HEXWAR_SCRAPE_INTERVAL: "5s"
+  HEXWAR_SCRAPE_TIMEOUT: "3s"
+  HEXWAR_LISTEN: ":9091"
+  # 쉼표로 구분된 노드 타겟 리스트 예시
+  HEXWAR_TARGETS: "server-1=http://hexwar-node-1:5000/api/diagnostics/stats,server-2=http://hexwar-node-2:5000/api/diagnostics/stats"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hexwar-exporter
+  namespace: monitoring
+  labels:
+    app: hexwar-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hexwar-exporter
+  template:
+    metadata:
+      labels:
+        app: hexwar-exporter
+    spec:
+      containers:
+      - name: exporter
+        image: hexwar-exporter:latest # 실제 빌드된 이미지 경로로 대체
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9091
+          name: metrics
+        envFrom:
+        - configMapRef:
+            name: hexwar-exporter-config
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9091
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 9091
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hexwar-exporter
+  namespace: monitoring
+  labels:
+    app: hexwar-exporter
+spec:
+  ports:
+  - port: 9091
+    targetPort: metrics
+    name: metrics
+  selector:
+    app: hexwar-exporter
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hexwar-exporter-hpa
+  namespace: monitoring
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hexwar-exporter
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

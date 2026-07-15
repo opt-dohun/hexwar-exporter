@@ -49,15 +49,14 @@ func main() {
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 4. 각 노드 폴링 루프를 별도 goroutine으로 시작 (동시 폴링)
+	// 4. ScrapeManager를 기동하여 워커 풀 구조로 동시 폴링 시작
+	manager := client.NewScrapeManager(clients, cfg.MaxWorkers, logger)
 	var wg sync.WaitGroup
-	for _, c := range clients {
-		wg.Add(1)
-		go func(nc *client.NodeClient) {
-			defer wg.Done()
-			nc.Run(ctx, cfg.ScrapeInterval)
-		}(c)
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		manager.Start(ctx, cfg.ScrapeInterval)
+	}()
 
 	// 5. NodePoller 슬라이스로 변환해 collector에 주입
 	pollers := make([]client.NodePoller, 0, len(clients))

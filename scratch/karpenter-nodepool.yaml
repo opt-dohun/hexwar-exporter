@@ -1,0 +1,47 @@
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: monitoring-pool
+spec:
+  template:
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64", "arm64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"] # Spot 인스턴스를 기본으로 선호, 실패 시 온디맨드 백업
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["c", "m", "r"] # 컴퓨팅, 일반, 메모리 인스턴스 패밀리 허용
+        - key: karpenter.k8s.aws/instance-generation
+          operator: In
+          values: ["6", "7"] # AWS 6, 7세대 인스턴스 타깃
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: monitoring-nodeclass
+  disruption:
+    consolidationPolicy: WhenUnderutilized # 자원이 널널해지면 더 저렴한 노드로 통합 및 스케일-인
+    expireAfter: 720h # 30일 경과 노드는 OS 패치/보안을 위해 자동 순환 교체
+---
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
+metadata:
+  name: monitoring-nodeclass
+spec:
+  amiFamily: AL2 # Amazon Linux 2
+  role: KarpenterNodeRole-EKS-Cluster # EKS 노드 그룹 IAM 역할 이름 (EKS 생성 시 설정된 역할로 변경 필요)
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: EKS-Cluster-Name # EKS 클러스터명 태그 (실제 클러스터명으로 변경 필요)
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: EKS-Cluster-Name # 보안그룹 검색용 태그
+  tags:
+    Name: karpenter-monitoring-node
+    Environment: production
