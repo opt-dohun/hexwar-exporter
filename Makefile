@@ -40,7 +40,7 @@ create-subnet: create-vpc
 
 create-lc:
 	@echo "=== 3. 가상 시작 구성(Launch Configuration) 생성 시작 ==="
-	@if ! awslocal autoscaling describe-launch-configurations --launch-configuration-names hexwar-lc --query "LaunchConfigurations[0].LaunchConfigurationName" --output text 2>/dev/null | grep -q "hexwar-lc"; then \
+	-@if ! awslocal autoscaling describe-launch-configurations --launch-configuration-names hexwar-lc --query "LaunchConfigurations[0].LaunchConfigurationName" --output text 2>/dev/null | grep -q "hexwar-lc"; then \
 		awslocal autoscaling create-launch-configuration \
 			--launch-configuration-name hexwar-lc \
 			--image-id ami-12345678 \
@@ -53,7 +53,7 @@ create-lc:
 create-asg: create-subnet create-lc
 	@$(eval SUBNET_ID_CURRENT := $(shell awslocal ec2 describe-subnets --filters "Name=vpc-id,Values=$(VPC_ID)" --query "Subnets[0].SubnetId" --output text 2>/dev/null))
 	@echo "=== 4. 가상 오토스케일링 그룹(ASG) 생성 시작 ==="
-	@if ! awslocal autoscaling describe-auto-scaling-groups --auto-scaling-group-names hexwar-node-group --query "AutoScalingGroups[0].AutoScalingGroupName" --output text 2>/dev/null | grep -q "hexwar-node-group"; then \
+	-@if ! awslocal autoscaling describe-auto-scaling-groups --auto-scaling-group-names hexwar-node-group --query "AutoScalingGroups[0].AutoScalingGroupName" --output text 2>/dev/null | grep -q "hexwar-node-group"; then \
 		awslocal autoscaling create-auto-scaling-group \
 			--auto-scaling-group-name hexwar-node-group \
 			--launch-configuration-name hexwar-lc \
@@ -61,7 +61,7 @@ create-asg: create-subnet create-lc
 			--max-size 5 \
 			--desired-capacity 1 \
 			--vpc-zone-identifier "$(SUBNET_ID_CURRENT)"; \
-		echo "오토스케일링 그룹 생성 완료: hexwar-node-group"; \
+			echo "오토스케일링 그룹 생성 완료: hexwar-node-group"; \
 	else \
 		echo "오토스케일링 그룹이 이미 존재합니다: hexwar-node-group"; \
 	fi
@@ -75,9 +75,10 @@ status:
 	@echo "\n[Subnets]"
 	@awslocal ec2 describe-subnets --query "Subnets[*].{Id:SubnetId,Vpc:VpcId,Cidr:CidrBlock}" --output table
 	@echo "\n[Launch Configurations]"
-	@awslocal autoscaling describe-launch-configurations --query "LaunchConfigurations[*].{Name:LaunchConfigurationName,Image:ImageId,Type:InstanceType}" --output table
+	-@awslocal autoscaling describe-launch-configurations --query "LaunchConfigurations[*].{Name:LaunchConfigurationName,Image:ImageId,Type:InstanceType}" --output table
 	@echo "\n[Auto Scaling Groups]"
-	@awslocal autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[*].{Name:AutoScalingGroupName,LC:LaunchConfigurationName,Desired:DesiredCapacity,Min:MinSize,Max:MaxSize}" --output table
+	-@awslocal autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[*].{Name:AutoScalingGroupName,LC:LaunchConfigurationName,Desired:DesiredCapacity,Min:MinSize,Max:MaxSize}" --output table
+
 
 clean:
 	@echo "=== LocalStack 리소스 정리 시작 ==="
@@ -171,10 +172,6 @@ helm-upgrade:
 
 # ── Kubernetes 제어 명령어 ──
 
-# 모든 네임스페이스의 Pod 상태 확인
-k8s-pods:
-	kubectl get pods -A
-
 # 메인 프로젝트의 docker 이미지를 빌드하여 k3d 클러스터에 로드
 k3d-import-server:
 	@echo "=== C--HaxWar 프로젝트 빌드 및 k3d 업로드 시작 ==="
@@ -214,10 +211,47 @@ k8s-server-down:
 	@echo "=== C# 게임 서버 삭제 ==="
 	kubectl delete -f scratch/hexwar-server-deployment.yaml
 
+# hexwar-exporter K8s 배포 및 중지
+k8s-exporter-up:
+	@echo "=== hexwar-exporter 배포 ==="
+	kubectl apply -f scratch/k8s-deployment.yaml
+
+k8s-exporter-down:
+	@echo "=== hexwar-exporter 삭제 ==="
+	kubectl delete -f scratch/k8s-deployment.yaml
+
+# Redis 클러스터 K8s 배포 및 중지 (순서 대기 포함)
+k8s-redis-up:
+	@echo "=== Redis 클러스터 인프라 배포 ==="
+	kubectl apply -f scratch/redis-cluster-deployment.yaml
+	@echo "=== Pod 리소스 생성 대기... ==="
+	sleep 3
+	@echo "=== Redis 노드 기동 대기 (최대 120초) ==="
+	kubectl wait --namespace=hexwar-infra --for=condition=ready pod -l app=redis-cluster --timeout=120s
+
+k8s-redis-down:
+	@echo "=== Redis 클러스터 인프라 삭제 ==="
+	kubectl delete -f scratch/redis-cluster-deployment.yaml
+
 # 브라우저 뷰어용 Grafana 포트포워딩 실행
-grafana-tunnel:
+tunnel-up:
 	@echo "=== Grafana 뷰어 포트포워딩 시작 (http://localhost:3000) ==="
-	kubectl port-forward service/grafana -n $(HELM_NAMESPACE) 3000:3000 --address=0.0.0.0
+	kubectl port-forward service/grafana -n $(HELM_NAMESPACE) 3000:3000 --address=0.0.0.0 &
+	@echo "=== hexwar-server 포트포워딩 시작 (http://localhost:5002) ==="
+	kubectl port-forward service/hexwar-server -n game 5002:5000 --address=0.0.0.0
+
+# 모니터링 포트포워딩 중지
+tunnel-down:
+	@echo "=== 포트포워딩 종료 ==="
+	@PIDS=$$(lsof -t -i:3000 -i:5002 2>/dev/null); \
+	if [ -n "$$PIDS" ]; then \
+		kill -9 $$PIDS; \
+		echo "포트포워딩 프로세스($$PIDS)를 종료했습니다."; \
+	else \
+		echo "종료할 포트포워딩 프로세스가 없습니다."; \
+	fi
+
+
 
 # ── 부하 스케일 테스트 제어 ──
 scale-load:
@@ -231,6 +265,7 @@ scale-reset:
 # ── 엣지 케이스 복구: 전체 인프라 완전 초기화 및 재기동 ──
 k3d-recreate-all: k3d-delete clean
 	@echo "=== [초기화] 전체 가상 환경을 파괴하고 처음부터 완전히 재구축합니다. ==="
+	$(MAKE) localstack-up
 	# 1. LocalStack 기동 대기
 	@until curl -s http://localhost:4566/_localstack/health > /dev/null; do \
 		echo "Waiting for LocalStack to be Ready..."; \
@@ -245,8 +280,15 @@ k3d-recreate-all: k3d-delete clean
 	$(MAKE) k3d-import-exporter
 	# 5. 오토스케일러 Helm 차트 배포
 	$(MAKE) helm-install
-	# 6. K8s 모니터링 스택 및 게임 서버 배포
+	# 6. K8s 모니터링 스택 배포
 	$(MAKE) k8s-monitoring-up
+	# 6.5 hexwar-exporter 배포
+	$(MAKE) k8s-exporter-up
+	# 7. Redis 클러스터 기동 및 동기화 완료 대기
+	$(MAKE) k8s-redis-up
+	# 8. 게임 서버 배포 (Redis가 완벽히 구성된 후 기동)
 	$(MAKE) k8s-server-up
 	@echo "=== [성공] 모든 시스템이 완전 재기동 및 복구되었습니다. ==="
+
+
 

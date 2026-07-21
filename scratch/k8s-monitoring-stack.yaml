@@ -1,3 +1,12 @@
+# kind 종류
+# Deployment - 파드 스케줄 관리
+# ConfigMap - 동적 설정 정보
+# Service - 네트워크 서비스
+# HorizontalPodAutoscaler - 자동 스케일 관리
+
+# Service - 네트워크 정의와 Deployment 연결
+
+# k8s Prometheus + OTel Collector + Grafana가 정의되어 있다. 
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -395,3 +404,15 @@ spec:
   selector:
     app: grafana
   type: LoadBalancer # 호스트 PC에서 고정 바인딩 경로로 접근 가능하게 LoadBalancer 설정
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi # 로컬 테스트용 2기가 용량 할당

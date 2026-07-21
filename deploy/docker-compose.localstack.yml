@@ -1,3 +1,9 @@
+# HexWar AWS Local 모듈
+# k8s 혹은 k3s 가 설치되어있지 않은 상태에서 AWS EC2, ASG 사용을 테스트하기 위한 모듈입니다.
+# 선행으로 별도 실행되어야함
+# make localstack-up - 컨테이너 실행
+# make localstack-down - 컨테이너 종료 
+
 version: "3.8"
 services:
   localstack:
@@ -10,4 +16,3 @@ services:
       - SERVICES=ec2,autoscaling
       - DISABLE_CUSTOM_DNS=1 # 1. 커스텀 DNS 서버 강제 비활성화 (macOS 파싱 충돌 회피)
       - DNS_ADDRESS=8.8.8.8 # 2. DNS 주소를 구글 퍼블릭 DNS로 고정
-

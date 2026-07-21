@@ -22,8 +22,8 @@ spec:
     spec:
       containers:
       - name: server
-        image: hexwar-server-1:latest
-        imagePullPolicy: Never # k3d image import로 주입한 이미지 강제 참조
+        image: hexwar-server-1:latest # make k3d-import-server로 주입한 이미지 강제 참조
+        imagePullPolicy: Never # 로컬 클러스터에서는 이미지를 강제로 사용하도록 설정
         ports:
         - containerPort: 5000
           name: http
@@ -42,6 +42,9 @@ spec:
           - name: HEXWAR_NODE_NAME
             value: "server-1" # 에이전트가 사용할 노드명 라벨
           # OpenTelemetry Auto-Instrumentation 환경 변수 주입
+          # Redis 연결 정보 설정 k8s 내부 coreDNS 서비스와 연동 
+          - name: Redis__ConnectionString
+            value: "redis-cluster-0.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-1.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-2.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-3.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-4.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-5.redis-cluster-service.hexwar-infra.svc.cluster.local:6379"
           - name: CORECLR_ENABLE_PROFILING
             value: "1"
           - name: CORECLR_PROFILER
@@ -58,6 +61,22 @@ spec:
             value: "http://hexwar-otel-collector.monitoring.svc.cluster.local:4317"
           - name: OTEL_DOTNET_AUTO_METRICS_ADDITIONAL_SOURCES
             value: "HexWar.Diagnostics" # 커스텀 비즈니스 지표 연동
+        livenessProbe: # 활성 상태 확인 
+          httpGet:
+            path: /api/diagnostics/stats
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/diagnostics/stats
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -72,3 +91,40 @@ spec:
   selector:
     app: hexwar-server
   type: ClusterIP
+
+---
+# Ingress - 외부 트래픽 라우팅
+# 도커에서는 expose로 외부로 노출했지만, 쿠버네티스에서는 Ingress로 외부로 노출합니다.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hexwar-ingress
+  namespace: game
+  annotations:
+    # NGINX Ingress Controller 지정
+    kubernetes.io/ingress.class: nginx
+    
+    # 1. Sticky Session 설정 (docker-compose의 ip_hash 대체)
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "HEXWAR_ROUTE"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+    
+    # 2. WebSocket 통신 지원을 위한 Proxy 설정
+    # NGINX Ingress는 Connection/Upgrade 헤더를 기본적으로 전달하므로 타임아웃만 늘려주면 됩니다.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    
+    # CORS 및 패킷 설정 최적화
+    nginx.ingress.kubernetes.io/proxy-body-size: "8m"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hexwar-server
+            port:
+              number: 5000
