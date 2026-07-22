@@ -23,5 +23,5 @@ spec:
           image: nginx:alpine
           resources:
             requests:
-              cpu: "10m"
+              cpu: "500m" # 로컬 노드 자원 고갈을 유도하기 위해 요구량 상향 (Pending 상태 유발)
               memory: "50Mi"
