@@ -2,9 +2,9 @@
         localstack-up localstack-down \
         obs-up obs-down \
         obs-merged-up obs-merged-down \
-        k3d-create k3d-delete \
+        k3d-create k3d-start k3d-delete \
         helm-repo helm-install helm-uninstall helm-upgrade \
-        k8s-pods k3d-import-server k3d-deploy-exporter exporter-restart
+        k8s-pods k3d-import-server k3d-deploy-exporter exporter-restart 
 
 # LocalStack 호스트 주소가 필요한 경우 환경 변수 설정 (기본값: http://localhost:4566)
 AWS_ENDPOINT_URL ?= http://localhost:4566
@@ -137,6 +137,9 @@ K3D_OPTS ?=
 # 예: make k3d-create K3D_OPTS="--port 8080:80@loadbalancer"
 k3d-create:
 	k3d cluster create $(K3D_CLUSTER_NAME) --servers $(K3D_SERVERS) $(K3D_OPTS)
+
+k3d-start:
+	k3d cluster start $(K3D_CLUSTER_NAME)
 
 # k3d 클러스터 삭제
 k3d-delete:

@@ -1,0 +1,23 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: hexwar-game-server-scaler
+  namespace: monitoring
+spec:
+  scaleTargetRef:
+    # 이 ScaledObject가 스케일링을 관리할 대상 Deployment의 이름
+    name: hexwar-game-server
+  minReplicaCount: 1 # 스케일 인(Scale-in) 시 유지할 최소 파드 개수
+  maxReplicaCount: 20 # 스케일 아웃(Scale-out) 시 허용할 최대 파드 개수
+  triggers:
+  - type: prometheus
+    metadata:
+      # 프로메테우스 서버의 내부 클러스터 서비스 주소
+      serverAddress: http://prometheus.monitoring.svc.cluster.local:9090
+      
+      # Exporter가 수집하여 저장한 활성 상태(active)의 총 세션 수 계산
+      query: sum(hexwar_sessions{state="active"})
+      
+      # 파드 1대당 목표 임계치 (Threshold)
+      # [작동 원리] 총 세션 수 / 현재 파드 수 > 100 일 경우 파드 스케일 아웃 수행
+      threshold: '100'

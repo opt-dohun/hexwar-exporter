@@ -78,23 +78,27 @@ spec:
   selector:
     app: hexwar-exporter
   type: ClusterIP
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: hexwar-exporter-hpa
-  namespace: monitoring
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: hexwar-exporter
-  minReplicas: 1
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
+
+# ---------------------------------------------------------------------
+# [주의] 아래 HPA는 KEDA(ScaledObject) 도입으로 인해 충돌 방지 차원에서 비활성화(주석 처리) 되었습니다.
+# KEDA가 내부적으로 새로운 HPA를 생성하므로, 이 코드가 활성화되어 있으면 파드 개수 계산에 충돌(Flapping)이 발생합니다.
+# ---------------------------------------------------------------------
+# apiVersion: autoscaling/v2
+# kind: HorizontalPodAutoscaler
+# metadata:
+#   name: hexwar-exporter-hpa
+#   namespace: monitoring
+# spec:
+#   scaleTargetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: hexwar-exporter
+#   minReplicas: 1
+#   maxReplicas: 10
+#   metrics:
+#   - type: Resource
+#     resource:
+#       name: cpu
+#       target:
+#         type: Utilization
+#         averageUtilization: 70

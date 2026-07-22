@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hexwar-game-server # KEDA와 일치하도록 이름 변경
+  namespace: monitoring    # KEDA와 일치하도록 namespace 지정
+spec:
+  replicas: 1 # KEDA가 1개로 시작함
+  selector:
+    matchLabels:
+      app: hexwar-game
+  template:
+    metadata:
+      labels:
+        app: hexwar-game
+    spec:
+      # KWOK 가상 노드 스케줄링 허용 (Karpenter 테스트와 호환)
+      tolerations:
+        - key: "kwok.x-k8s.io/node"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: game-logic
+          image: nginx:alpine
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "50Mi"

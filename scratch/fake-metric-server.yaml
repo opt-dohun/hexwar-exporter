@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-metric-server
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-metric-server
+  template:
+    metadata:
+      labels:
+        app: fake-metric-server
+    spec:
+      containers:
+      - name: fake-metric
+        image: python:3.9-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          cat << 'EOF' > server.py
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class MyHandler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.send_header('Content-type', 'text/plain; version=0.0.4')
+                  self.end_headers()
+                  self.wfile.write(b'# HELP hexwar_sessions Fake sessions count\n')
+                  self.wfile.write(b'# TYPE hexwar_sessions gauge\n')
+                  self.wfile.write(b'hexwar_sessions{state="active"} 500\n')
+          HTTPServer(('', 80), MyHandler).serve_forever()
+          EOF
+          python server.py
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-metric-server
+  namespace: monitoring
+spec:
+  selector:
+    app: fake-metric-server
+  ports:
+  - port: 80
+    targetPort: 80
