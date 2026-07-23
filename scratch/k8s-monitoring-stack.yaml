@@ -19,8 +19,25 @@ data:
       evaluation_interval: 15s
     scrape_configs:
       - job_name: 'hexwar-exporter'
-        static_configs:
-          - targets: ['hexwar-exporter.monitoring.svc.cluster.local:9091']
+        scrape_interval: 15s
+        sample_limit: 200 # 타겟 하나가 뱉을 수 있는 최대 시계열 수 제한 (카디널리티 폭발 방어선)
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # prometheus.io/scrape: "true" 어노테이션이 있는 파드만 수집
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          # prometheus.io/port 에 명시된 포트로 스크랩 대상 주소 변경
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          # 라벨로 서비스명 표시
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: service
       - job_name: 'otel-collector'
         static_configs:
           - targets: ['hexwar-otel-collector.monitoring.svc.cluster.local:8889']
@@ -217,8 +234,8 @@ data:
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "targets": [
             {
-              "expr": "hexwar_working_set_bytes",
-              "legendFormat": "{{node}} memory",
+              "expr": "avg(hexwar_working_set_bytes)",
+              "legendFormat": "Average Memory",
               "refId": "A"
             }
           ],

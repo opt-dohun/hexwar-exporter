@@ -105,32 +105,25 @@ func (c *NodeClient) Target() config.Target { return c.target }
 // 워커 풀(Worker Pool) 구조를 통해 병렬적이고 안정적으로 관리한다.
 type ScrapeManager struct {
 	clients []*NodeClient
-	workers int
-	queue   chan *NodeClient
 	logger  *slog.Logger
 }
 
 // NewScrapeManager는 ScrapeManager 인스턴스를 생성한다.
-func NewScrapeManager(clients []*NodeClient, workers int, logger *slog.Logger) *ScrapeManager {
+func NewScrapeManager(clients []*NodeClient, logger *slog.Logger) *ScrapeManager {
 	return &ScrapeManager{
 		clients: clients,
-		workers: workers,
-		queue:   make(chan *NodeClient, len(clients)),
 		logger:  logger,
 	}
 }
 
-// Start는 ctx가 취소될 때까지 지정된 워커 개수로 폴링 루프를 실행한다.
+// Start는 ctx가 취소될 때까지 폴링 루프를 실행한다.
 func (m *ScrapeManager) Start(ctx context.Context, interval time.Duration) {
-	m.logger.Info("ScrapeManager 시작", "workers", m.workers, "targets", len(m.clients))
-
-	// 1. 지정된 워커 수만큼 백그라운드 고루틴(Worker Pool) 기동
-	for i := 1; i <= m.workers; i++ {
-		go m.worker(ctx, i)
-	}
+	m.logger.Info("ScrapeManager 시작", "targets", len(m.clients))
 
 	// 시작 직후 즉시 1회 수집 작업 밀어 넣기 (초기 데이터 즉시 확보)
-	m.trigger()
+	for _, c := range m.clients {
+		c.poll(ctx)
+	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -141,36 +134,9 @@ func (m *ScrapeManager) Start(ctx context.Context, interval time.Duration) {
 			m.logger.Info("ScrapeManager 중단")
 			return
 		case <-ticker.C:
-			m.trigger()
-		}
-	}
-}
-
-// trigger는 수집 대기열 큐에 모든 클라이언트를 밀어 넣는다.
-func (m *ScrapeManager) trigger() {
-	for _, client := range m.clients {
-		select {
-		case m.queue <- client:
-		default:
-			// 큐 버퍼가 꽉 찬 경우 (이전 수집 주기의 작업이 아직 안 끝난 노드)
-			m.logger.Warn("수집 대기열 큐가 가득 찼습니다. 이전 수집 작업이 지연되고 있을 수 있습니다.", 
-				"node", client.target.Name)
-		}
-	}
-}
-
-// worker는 큐에서 작업을 꺼내 실제 HTTP 폴링을 수행한다.
-func (m *ScrapeManager) worker(ctx context.Context, id int) {
-	m.logger.Debug("워커 고루틴 기동", "worker_id", id)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case client, ok := <-m.queue:
-			if !ok {
-				return
+			for _, c := range m.clients {
+				c.poll(ctx)
 			}
-			client.poll(ctx)
 		}
 	}
 }

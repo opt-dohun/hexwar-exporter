@@ -40,6 +40,8 @@ type fakePoller struct {
 
 func (f *fakePoller) Target() config.Target     { return f.target }
 func (f *fakePoller) Last() client.SampleResult { return f.last }
+func (f *fakePoller) ConsecutiveFailures() int  { return 0 }
+func (f *fakePoller) LastSuccessfulTime() time.Time { return time.Time{} }
 
 func newCollectorWithFakes(t *testing.T, pollers []client.NodePoller) (*Collector, chan prometheus.Metric) {
 	t.Helper()

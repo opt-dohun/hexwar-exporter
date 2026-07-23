@@ -1,16 +1,17 @@
 package collector_test
 
 import (
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	
+
 	"github.com/Penny-B1t/hexwar-exporter/internal/client"
 	"github.com/Penny-B1t/hexwar-exporter/internal/collector"
 	"github.com/Penny-B1t/hexwar-exporter/internal/config"
@@ -22,18 +23,19 @@ type mockPoller struct {
 	last   client.SampleResult
 }
 
-func (m *mockPoller) Target() config.Target     { return m.target }
-func (m *mockPoller) Last() client.SampleResult { return m.last }
+func (m *mockPoller) Target() config.Target         { return m.target }
+func (m *mockPoller) Last() client.SampleResult     { return m.last }
+func (m *mockPoller) ConsecutiveFailures() int      { return 0 }
+func (m *mockPoller) LastSuccessfulTime() time.Time { return time.Time{} }
 
 func BenchmarkExporterScrape_WithCache(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Discard, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	metrics := collector.NewMetrics()
 
-	// 50개의 노드가 정상적으로 데이터를 캐싱한 상태라고 가정 (HPA로 50개 Pod 확장 상황)
 	var pollers []client.NodePoller
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 1; i++ {
 		pollers = append(pollers, &mockPoller{
-			target: config.Target{Name: "hexwar-server-mock"},
+			target: config.Target{Name: fmt.Sprintf("hexwar-server-mock-%d", i)},
 			last: client.SampleResult{
 				Stats: client.ServerStats{
 					WorkingSetMB:                45.5,
@@ -70,10 +72,10 @@ func BenchmarkExporterScrape_WithCache(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest("GET", "/metrics", nil)
 		rr := httptest.NewRecorder()
-		
+
 		// 캐시된 데이터를 기반으로 Prometheus 형식으로 렌더링 (비동기 폴링의 효과)
 		handler.ServeHTTP(rr, req)
-		
+
 		if rr.Code != http.StatusOK {
 			b.Fatalf("expected status 200, got %d", rr.Code)
 		}

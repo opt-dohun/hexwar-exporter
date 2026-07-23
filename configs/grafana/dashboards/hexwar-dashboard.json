@@ -298,8 +298,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hexwar_working_set_bytes",
-          "legendFormat": "{{node}} memory",
+          "expr": "avg(hexwar_working_set_bytes)",
+          "legendFormat": "Average Memory",
           "range": true,
           "refId": "A"
         }

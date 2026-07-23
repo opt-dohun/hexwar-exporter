@@ -50,7 +50,7 @@ func main() {
 	defer stop()
 
 	// 4. ScrapeManager를 기동하여 워커 풀 구조로 동시 폴링 시작
-	manager := client.NewScrapeManager(clients, cfg.MaxWorkers, logger)
+	manager := client.NewScrapeManager(clients, logger)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
