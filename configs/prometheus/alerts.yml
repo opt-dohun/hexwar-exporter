@@ -60,3 +60,13 @@ groups:
         annotations:
           summary: "커넥션-세션 불일치 — node={{ $labels.node }}"
           description: "활성 세션({{ $labels.node }}) 대비 WebSocket 커넥션이 예상보다 적습니다. 연결 유실을 확인하세요."
+
+      # ── 5. 폴링 정체 감지 (스케일링 및 캐시 한계 방어) ──
+      # 캐시된 값을 계속 반환하는 경우 실제 서버가 멈췄는지 감지하기 위한 방어 장치
+      - alert: GameServerPollStale
+        expr: time() - hexwar_last_successful_poll_timestamp_seconds > 30
+        labels:
+          severity: warning
+        annotations:
+          summary: "게임 서버 {{ $labels.node }}의 실제 폴링이 30초 이상 정체됨"
+          description: "폴링 실패 또는 지연으로 30초 이상 새로운 데이터가 수집되지 않고 있습니다."

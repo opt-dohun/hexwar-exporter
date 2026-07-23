@@ -19,8 +19,30 @@ spec:
     metadata:
       labels:
         app: hexwar-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
     spec:
       containers:
+      - name: exporter
+        image: hexwar-exporter:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9091
+          name: metrics
+        env:
+        - name: GOMEMLIMIT
+          value: "450MiB"
+        envFrom:
+        - configMapRef:
+            name: hexwar-exporter-config
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
       - name: server
         image: hexwar-server-1:latest # make k3d-import-server로 주입한 이미지 강제 참조
         imagePullPolicy: Never # 로컬 클러스터에서는 이미지를 강제로 사용하도록 설정

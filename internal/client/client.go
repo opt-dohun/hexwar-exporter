@@ -50,6 +50,8 @@ type SampleResult struct {
 type NodePoller interface {
 	Target() config.Target
 	Last() SampleResult
+	LastSuccessfulTime() time.Time
+	ConsecutiveFailures() int
 }
 
 // NodeClient는 단일 노드를 주기적으로 폴링해 최신 결과를 저장한다.
@@ -59,7 +61,8 @@ type NodeClient struct {
 	logger *slog.Logger
 
 	mu   sync.RWMutex
-	last SampleResult // 가장 최근 폴링 결과
+	last           SampleResult // 가장 최근 폴링 결과
+	lastSuccessful time.Time    // 가장 최근에 성공한 폴링 시각
 
 	// 서킷 브레이커 & 백오프 상태 필드
 	state           circuitState
@@ -226,11 +229,13 @@ func (c *NodeClient) poll(ctx context.Context) {
 		// 성공 시 서킷 닫기 및 카운터 초기화
 		c.state = stateClosed
 		c.consecutiveFail = 0
+		now := time.Now()
 		c.last = SampleResult{
 			Stats:     stats,
 			Duration:  time.Since(start),
-			FetchedAt: time.Now(),
+			FetchedAt: now,
 		}
+		c.lastSuccessful = now
 		c.logger.Info("서킷 브레이커 CLOSED (정상 복구)", "node", c.target.Name)
 	}
 
@@ -278,6 +283,20 @@ func (c *NodeClient) Last() SampleResult {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.last
+}
+
+// LastSuccessfulTime은 마지막으로 성공한 폴링 시각을 반환한다.
+func (c *NodeClient) LastSuccessfulTime() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastSuccessful
+}
+
+// ConsecutiveFailures는 현재 연속으로 실패한 횟수를 반환한다.
+func (c *NodeClient) ConsecutiveFailures() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.consecutiveFail
 }
 
 // 컴파일 타임 인터페이스 구현 보장

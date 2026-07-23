@@ -22,18 +22,27 @@ rule_files:
 
 # 스크랩 대상 정의
 scrape_configs:
-  # ── 1. hexwar-exporter: HexWar 서버 메트릭 ──
-  # hexwar-exporter가 hexwar-server-1/2를 폴링한 결과를 Prometheus 포맷으로 노출.
-  # Prometheus는 이 엔드포인트를 스크랩해 시계열을 저장한다.
+  # 쿠버네트스와의 연동을 위한 스크랩 설정
   - job_name: 'hexwar-exporter'
     scrape_interval: 15s
-    static_configs:
-      # Docker Compose 내부 DNS: 서비스명(hexwar-exporter)이 호스트명.
-      # 포트 9091은 exporter가 /metrics를 리슨하는 포트.
-      - targets: ['hexwar-exporter:9091']
-        labels:
-          # 라벨 부착으로 Grafana에서 데이터 소스 식별 용이
-          service: 'hexwar-game-server'
+    sample_limit: 200 # 타겟 하나가 뱉을 수 있는 최대 시계열 수 제한 (카디널리티 폭발 방어선)
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      # prometheus.io/scrape: "true" 어노테이션이 있는 파드만 수집
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      # prometheus.io/port 에 명시된 포트로 스크랩 대상 주소 변경
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      # 라벨로 서비스명 표시
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: replace
+        target_label: service
 
   # ── 2. otel-collector: OTel Push 기반 서버 메트릭 ──
   # OTel Collector가 게임 서버로부터 Push 받은 메트릭을 /metrics에서 노출.

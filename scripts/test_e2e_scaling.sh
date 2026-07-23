@@ -29,31 +29,67 @@ echo "... (대다수 파드 Pending)"
 echo "----------------------------------------------------------"
 sleep 3
 
-echo "[5/5] Karpenter 동적 노드 프로비저닝 시작"
-# Pending 상태의 파드들을 담을 가상의 빈 노드(EC2)를 Karpenter가 지어주는 과정을 모방
-for i in {201..220}; do
-cat <<EOF | kubectl apply -f - > /dev/null 2>&1
-apiVersion: v1
-kind: Node
-metadata:
-  annotations:
-    node.alpha.kubernetes.io/ttl: "0"
-    kwok.x-k8s.io/node: "fake"
-  labels:
-    type: kwok
-    node-type: game-server
-  name: kwok-karpenter-node-$i
-EOF
+echo "[5/5] Karpenter 동적 노드 프로비저닝 시작 (KWOK Provider 연동)"
+
+# 1. Karpenter 저장소 클론 및 kwok provider 설치
+echo "Karpenter 소스코드 다운로드 및 설치 중..."
+if [ ! -d "scratch/karpenter" ]; then
+  git clone --depth 1 https://github.com/kubernetes-sigs/karpenter.git scratch/karpenter > /dev/null 2>&1
+fi
+
+echo "빌드 툴(ko) 확인 및 설치..."
+export PATH=$PATH:$(go env GOPATH)/bin
+if ! command -v ko &> /dev/null; then
+    go install github.com/google/ko@latest > /dev/null 2>&1
+fi
+
+cd scratch/karpenter
+make install-kwok > /dev/null 2>&1
+
+echo "KWOK Provider 컨트롤러 빌드 및 k3d 이미지 업로드 중 (수 분 소요)..."
+export KO_DOCKER_REPO=ko.local
+export KWOK_REPO=ko.local
+IMG=$(ko build -B sigs.k8s.io/karpenter/kwok 2>/dev/null)
+k3d image import $IMG -c hexwar-cluster > /dev/null 2>&1
+
+echo "Karpenter Helm 배포 중..."
+make apply IMG_DIGEST="" > /dev/null 2>&1
+cd ../../
+
+# 2. Karpenter NodePool 및 KwokNodeClass 적용
+echo "Karpenter NodePool(game) 및 KwokNodeClass 적용 중..."
+kubectl apply -f scratch/karpenter-game-nodepool.yaml
+
+echo "Karpenter가 Pending 파드를 감지하고 동적 노드를 생성할 때까지 대기..."
+
+# Wait up to 60 seconds
+EXPECTED=20
+RUNNING=0
+i=1
+while [ $i -le 12 ]; do
+  RUNNING=$(kubectl get pods -l app=hexwar-game -n monitoring --field-selector=status.phase=Running -o name | wc -l | tr -d ' ')
+  if [ "$RUNNING" -ge "$EXPECTED" ]; then
+    break
+  fi
+  wait_time=$((i*5))
+  echo "현재 Running 파드 수: $RUNNING / $EXPECTED ... 대기 중 (${wait_time}초)"
+  sleep 5
+  i=$((i+1))
 done
 
-echo "Karpenter가 동적 노드를 생성 후 배정 대기."
-sleep 8
+echo ">> Karpenter의 NodeClaim 현황 (프로비저닝 시도 확인):"
+kubectl get nodeclaims -A
+
+echo ">> Karpenter 컨트롤러 로그 요약 (최근 스케일링 판단 로직):"
+kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --tail=15
 
 echo ">> Karpenter 클라우드 노드 목록:"
 kubectl get nodes -l type=kwok | head -n 5
-echo "... (총 20대 생성됨)"
+echo "... (동적 생성 노드 상태 확인)"
 
-echo ">> 노드를 할당받아 정상 구동(Running) 중인 게임 서버 파드 상태:"
-kubectl get pods -l app=hexwar-game -n monitoring | grep Running | head -n 5
-echo "... (총 20대 Running 성공!)"
-
+if [ "$RUNNING" -ge "$EXPECTED" ]; then
+  echo "✅ ${RUNNING}/${EXPECTED} Running - 테스트 성공"
+else
+  echo "❌ ${RUNNING}/${EXPECTED} Running - 테스트 실패"
+  exit 1
+fi

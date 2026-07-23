@@ -20,9 +20,10 @@ type Metrics struct {
 	memoryPerSession *prometheus.Desc
 
 	// exporter 자체 상태
-	exporterUp      *prometheus.Desc
-	scrapeDuration  *prometheus.Desc
-	scrapeTimestamp *prometheus.Desc
+	exporterUp              *prometheus.Desc
+	scrapeDuration          *prometheus.Desc
+	lastSuccessfulTimestamp *prometheus.Desc
+	consecutiveFailures     *prometheus.Desc
 }
 
 // NewMetrics는 메트릭 디스크립터들을 생성한다.
@@ -77,9 +78,14 @@ func NewMetrics() *Metrics {
 			"노드 1회 폴링 소요 시간(초)",
 			nodeLabel, nil,
 		),
-		scrapeTimestamp: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "scrape", "timestamp_seconds"),
+		lastSuccessfulTimestamp: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "last_successful_poll_timestamp_seconds"),
 			"마지막 폴링 성공 시각(unix epoch 초)",
+			nodeLabel, nil,
+		),
+		consecutiveFailures: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "consecutive_poll_failures_total"),
+			"연속 폴링 실패 횟수",
 			nodeLabel, nil,
 		),
 	}
@@ -109,7 +115,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.metrics.memoryPerSession
 	ch <- c.metrics.exporterUp
 	ch <- c.metrics.scrapeDuration
-	ch <- c.metrics.scrapeTimestamp
+	ch <- c.metrics.lastSuccessfulTimestamp
+	ch <- c.metrics.consecutiveFailures
 }
 
 // Collect는 실제 메트릭 값을 수집해 Prometheus로 보낸다.
@@ -117,6 +124,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	for _, p := range c.pollers {
 		last := p.Last()
 		node := p.Target().Name
+
+		// 항상 방출해야 하는 메트릭 (Staleness 추적용)
+		lastSuccess := p.LastSuccessfulTime()
+		if !lastSuccess.IsZero() {
+			c.emit(ch, c.metrics.lastSuccessfulTimestamp, node, float64(lastSuccess.Unix()))
+		}
+		c.emit(ch, c.metrics.consecutiveFailures, node, float64(p.ConsecutiveFailures()))
 
 		if last.Err != nil || last.FetchedAt.IsZero() {
 			c.emit(ch, c.metrics.exporterUp, node, 0)
@@ -140,7 +154,6 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		c.emitWithLabels(ch, c.metrics.sessions, []string{node, "gameover"}, float64(s.GameOverSessions))
 
 		c.emit(ch, c.metrics.scrapeDuration, node, last.Duration.Seconds())
-		c.emit(ch, c.metrics.scrapeTimestamp, node, float64(last.FetchedAt.Unix()))
 	}
 }
 

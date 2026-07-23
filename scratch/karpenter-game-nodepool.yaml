@@ -1,6 +1,6 @@
 # 1. KwokNodeClass: Karpenter가 사용할 실제 인프라 공급자를 KWOK으로 지정
 apiVersion: karpenter.kwok.sh/v1alpha1
-kind: KwokNodeClass
+kind: KWOKNodeClass
 metadata:
   name: game-nodeclass
 spec:
@@ -8,7 +8,7 @@ spec:
   # 실제 인프라라면 EC2NodeClass에 AMI, Subnet, SecurityGroup 등이 들어갑니다.
 ---
 # 2. NodePool: 게임 서버에 특화된 스케일링 정책 (요청하신 metadata.name: game 반영)
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: game
@@ -17,8 +17,9 @@ spec:
     spec:
       nodeClassRef:
         group: karpenter.kwok.sh
-        kind: KwokNodeClass
+        kind: KWOKNodeClass
         name: game-nodeclass
+      expireAfter: 720h # 30일 경과 노드 교체 (v1에서 template.spec 하위로 이동)
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -35,5 +36,5 @@ spec:
           values: ["game-server"]
   # Consolidation 정책: 노드가 낭비될 때(Underutilized) 빈 노드를 삭제하여 비용 절감 (Scale-in)
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: 720h # 30일 경과 노드 교체
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
