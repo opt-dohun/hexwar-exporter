@@ -173,6 +173,21 @@ helm-upgrade:
 		-f $(HELM_VALUES_FILE) \
 		-n $(HELM_NAMESPACE)
 
+# Agones 설치 및 대기
+agones-install:
+	@echo "=== Agones 시스템 설치 시작 ==="
+	helm repo add agones https://agones.dev/chart/stable
+	helm repo update
+	helm install my-release --namespace agones-system --create-namespace agones/agones
+	@echo "=== Agones 컨트롤러 기동 대기 (최대 120초) ==="
+	kubectl wait --for=condition=Ready pods --all -n agones-system --timeout=120s
+	@echo "=== Agones 시스템 설치 완료 ==="
+
+# Agones 삭제
+agones-uninstall:
+	@echo "=== Agones 시스템 삭제 ==="
+	helm uninstall my-release -n agones-system
+
 # ── Kubernetes 제어 명령어 ──
 
 # 메인 프로젝트의 docker 이미지를 빌드하여 k3d 클러스터에 로드
@@ -258,12 +273,12 @@ tunnel-down:
 
 # ── 부하 스케일 테스트 제어 ──
 scale-load:
-	@echo "=== 부하 테스트 유도 (게임 서버 Pod 80개로 확장) ==="
-	kubectl scale deployment hexwar-server -n game --replicas=80
+	@echo "=== 부하 테스트 유도 (게임 서버 Fleet 80개로 확장) ==="
+	kubectl scale fleet hexwar-server -n game --replicas=80
 
 scale-reset:
-	@echo "=== 부하 테스트 종료 (게임 서버 Pod 1개로 원복) ==="
-	kubectl scale deployment hexwar-server -n game --replicas=1
+	@echo "=== 부하 테스트 종료 (게임 서버 Fleet 1개로 원복) ==="
+	kubectl scale fleet hexwar-server -n game --replicas=1
 
 # ── 엣지 케이스 복구: 전체 인프라 완전 초기화 및 재기동 ──
 k3d-recreate-all: k3d-delete clean
@@ -283,15 +298,40 @@ k3d-recreate-all: k3d-delete clean
 	$(MAKE) k3d-import-exporter
 	# 5. 오토스케일러 Helm 차트 배포
 	$(MAKE) helm-install
+	# 5.5 Agones 컨트롤러 배포
+	$(MAKE) agones-install
 	# 6. K8s 모니터링 스택 배포
 	$(MAKE) k8s-monitoring-up
 	# 6.5 hexwar-exporter 배포
 	$(MAKE) k8s-exporter-up
 	# 7. Redis 클러스터 기동 및 동기화 완료 대기
 	$(MAKE) k8s-redis-up
-	# 8. 게임 서버 배포 (Redis가 완벽히 구성된 후 기동)
+	# 8. Agones SDK ServiceAccount 권한 부여 및 게임 서버 배포
+	@echo "=== Agones SDK ServiceAccount 생성 및 권한 부여 ==="
+	kubectl create serviceaccount agones-sdk -n game || true
+	kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game || true
 	$(MAKE) k8s-server-up
 	@echo "=== [성공] 모든 시스템이 완전 재기동 및 복구되었습니다. ==="
+
+# ── 기존 클러스터 환경 유지 및 소스/설정만 빠르고 가볍게 재배포 ──
+k3d-update-all:
+	@echo "=== [업데이트] 클러스터를 파괴하지 않고 코드와 설정만 최신으로 덮어씁니다. ==="
+	# 1. 소스코드 변경사항 빌드 및 k3d 업로드
+	$(MAKE) k3d-import-server
+	$(MAKE) k3d-import-exporter
+	# 2. 모니터링 및 인프라 리소스 업데이트 (Apply)
+	$(MAKE) k8s-monitoring-up
+	$(MAKE) k8s-exporter-up
+	$(MAKE) k8s-redis-up
+	# 3. Agones 권한 부여 및 게임 서버 Fleet 업데이트
+	kubectl create serviceaccount agones-sdk -n game || true
+	kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game || true
+	$(MAKE) k8s-server-up
+	# 4. 새 이미지가 반영되도록 기존 파드(GameServer 및 Exporter) 강제 재시작
+	@echo "=== 변경된 이미지 반영을 위해 파드를 재시작합니다 ==="
+	kubectl rollout restart deployment hexwar-exporter -n monitoring || true
+	kubectl delete gs --all -n game || true
+	@echo "=== [성공] 코드 및 설정 업데이트가 완료되었습니다. ==="
 
 
 

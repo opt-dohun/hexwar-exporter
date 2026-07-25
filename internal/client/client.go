@@ -60,7 +60,7 @@ type NodeClient struct {
 	http   *http.Client
 	logger *slog.Logger
 
-	mu   sync.RWMutex
+	mu             sync.RWMutex
 	last           SampleResult // 가장 최근 폴링 결과
 	lastSuccessful time.Time    // 가장 최근에 성공한 폴링 시각
 
@@ -101,7 +101,7 @@ func NewNodeClient(target config.Target, timeout time.Duration, logger *slog.Log
 // Target은 폴링 대상 정보를 반환한다 (NodePoller 구현).
 func (c *NodeClient) Target() config.Target { return c.target }
 
-// ScrapeManager는 등록된 여러 NodeClient의 수집 작업을 
+// ScrapeManager는 등록된 여러 NodeClient의 수집 작업을
 // 워커 풀(Worker Pool) 구조를 통해 병렬적이고 안정적으로 관리한다.
 type ScrapeManager struct {
 	clients []*NodeClient
@@ -140,7 +140,6 @@ func (m *ScrapeManager) Start(ctx context.Context, interval time.Duration) {
 		}
 	}
 }
-
 
 // poll은 1회 폴링을 수행하고 결과를 last에 저장한다.
 // 에러가 발생해도 last.err에 저장되며, 다른 노드에 영향을 주지 않는다(에러 격리).

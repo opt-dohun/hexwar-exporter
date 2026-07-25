@@ -18,6 +18,7 @@ spec:
         sessions:
           capacity: 1000
           count: 0
+      container: server
       ports:
       - name: default
         containerPort: 5000
@@ -30,81 +31,79 @@ spec:
             prometheus.io/port: "9091"
         spec:
           containers:
-      - name: exporter
-        image: hexwar-exporter:latest
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 9091
-          name: metrics
-        env:
-        - name: GOMEMLIMIT
-          value: "450MiB"
-        envFrom:
-        - configMapRef:
-            name: hexwar-exporter-config
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
-      - name: server
-        image: hexwar-server-1:latest # make k3d-import-server로 주입한 이미지 강제 참조
-        imagePullPolicy: Never # 로컬 클러스터에서는 이미지를 강제로 사용하도록 설정
-        ports:
-        - containerPort: 5000
-          name: http
-        resources:
-          requests:
-            cpu: "50m"       # 0.05 코어 (빠른 스케일아웃 유도를 위해 극단적으로 작게 제한)
-            memory: "64Mi"
-          limits:
-            cpu: "200m"
-            memory: "256Mi"
-        env:
-          - name: ASPNETCORE_ENVIRONMENT
-            value: "Production"
-          - name: ASPNETCORE_URLS
-            value: "http://+:5000"
-          - name: HEXWAR_NODE_NAME
-            value: "server-1" # 에이전트가 사용할 노드명 라벨
-          # OpenTelemetry Auto-Instrumentation 환경 변수 주입
-          # Redis 연결 정보 설정 k8s 내부 coreDNS 서비스와 연동 
-          - name: Redis__ConnectionString
-            value: "redis-cluster-0.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-1.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-2.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-3.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-4.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-5.redis-cluster-service.hexwar-infra.svc.cluster.local:6379"
-          - name: CORECLR_ENABLE_PROFILING
-            value: "1"
-          - name: CORECLR_PROFILER
-            value: "{918728C2-14F8-4d0b-9611-D6E26B79552C}"
-          - name: CORECLR_PROFILER_PATH
-            value: "/otel/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          - name: DOTNET_STARTUP_HOOKS
-            value: "/otel/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll"
-          - name: OTEL_DOTNET_AUTO_HOME
-            value: "/otel"
-          - name: OTEL_METRICS_EXPORTER
-            value: "otlp"
-          - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://hexwar-otel-collector.monitoring.svc.cluster.local:4317"
-          - name: OTEL_DOTNET_AUTO_METRICS_ADDITIONAL_SOURCES
-            value: "HexWar.Diagnostics" # 커스텀 비즈니스 지표 연동
-        livenessProbe: # 활성 상태 확인 
-          httpGet:
-            path: /api/diagnostics/stats
-            port: 5000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 10
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /api/diagnostics/stats
-            port: 5000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 10
-          failureThreshold: 3
+          - name: exporter
+            image: hexwar-exporter:latest
+            imagePullPolicy: IfNotPresent
+            ports:
+            - containerPort: 9091
+              name: metrics
+            env:
+            - name: GOMEMLIMIT
+              value: "450MiB"
+            envFrom:
+            - configMapRef:
+                name: hexwar-exporter-config
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "128Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"
+          - name: server
+            image: hexwar-server-1:latest
+            imagePullPolicy: Never
+            ports:
+            - containerPort: 5000
+              name: http
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "64Mi"
+              limits:
+                cpu: "200m"
+                memory: "256Mi"
+            env:
+              - name: ASPNETCORE_ENVIRONMENT
+                value: "Production"
+              - name: ASPNETCORE_URLS
+                value: "http://+:5000"
+              - name: HEXWAR_NODE_NAME
+                value: "server-1"
+              - name: Redis__ConnectionString
+                value: "redis-cluster-0.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-1.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-2.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-3.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-4.redis-cluster-service.hexwar-infra.svc.cluster.local:6379,redis-cluster-5.redis-cluster-service.hexwar-infra.svc.cluster.local:6379"
+              - name: CORECLR_ENABLE_PROFILING
+                value: "1"
+              - name: CORECLR_PROFILER
+                value: "{918728C2-14F8-4d0b-9611-D6E26B79552C}"
+              - name: CORECLR_PROFILER_PATH
+                value: "/otel/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
+              - name: DOTNET_STARTUP_HOOKS
+                value: "/otel/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll"
+              - name: OTEL_DOTNET_AUTO_HOME
+                value: "/otel"
+              - name: OTEL_METRICS_EXPORTER
+                value: "otlp"
+              - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                value: "http://hexwar-otel-collector.monitoring.svc.cluster.local:4317"
+              - name: OTEL_DOTNET_AUTO_METRICS_ADDITIONAL_SOURCES
+                value: "HexWar.Diagnostics"
+            livenessProbe:
+              httpGet:
+                path: /api/diagnostics/stats
+                port: 5000
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 10
+              failureThreshold: 3
+            readinessProbe:
+              httpGet:
+                path: /api/diagnostics/stats
+                port: 5000
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 10
+              failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
