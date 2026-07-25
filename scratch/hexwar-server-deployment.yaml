@@ -3,8 +3,8 @@ kind: Namespace
 metadata:
   name: game
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: agones.dev/v1
+kind: Fleet
 metadata:
   name: hexwar-server
   namespace: game
@@ -12,18 +12,24 @@ metadata:
     app: hexwar-server
 spec:
   replicas: 1
-  selector:
-    matchLabels:
-      app: hexwar-server
   template:
-    metadata:
-      labels:
-        app: hexwar-server
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "9091"
     spec:
-      containers:
+      counters:
+        sessions:
+          capacity: 1000
+          count: 0
+      ports:
+      - name: default
+        containerPort: 5000
+      template:
+        metadata:
+          labels:
+            app: hexwar-server
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9091"
+        spec:
+          containers:
       - name: exporter
         image: hexwar-exporter:latest
         imagePullPolicy: IfNotPresent

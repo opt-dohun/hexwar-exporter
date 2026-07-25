@@ -4,7 +4,8 @@ cd "$(dirname "$0")/.."
 echo "[1/5] 환경 초기화"
 kubectl delete nodes -l type=kwok > /dev/null 2>&1
 kubectl delete pods -l app=keda-operator -n keda --force --grace-period=0 > /dev/null 2>&1
-kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml > /dev/null 2>&1
+# keda를 쿠버네티스 클러스터에 설치합니다.
+kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml > /dev/null 2>&1 
 kubectl wait --for=condition=Ready pods -l app=keda-operator -n keda --timeout=90s > /dev/null 2>&1
 
 echo "[2/5] 무거운 자원(CPU 500m)을 요구하는 게임 서버 1대 배포"
