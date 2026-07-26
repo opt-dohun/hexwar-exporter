@@ -88,11 +88,14 @@ clean:
 	-if [ -n "$(VPC_ID)" ] && [ "$(VPC_ID)" != "None" ]; then awslocal ec2 delete-vpc --vpc-id "$(VPC_ID)"; fi
 	@echo "정리가 완료되었습니다."
 
+-include .env
+
 # ── Docker Compose 제어 명령어 ──
 
-# 메인 프로젝트(C--HaxWar) 경로 및 docker-compose.yml 경로 설정
-MAIN_PROJECT_DIR ?= /Users/dhkim/Downloads/C--HaxWar
+# 메인 프로젝트(HaxWar) 경로 및 docker-compose.yml 경로 설정
+MAIN_PROJECT_DIR ?= ./third_party/HaxWar
 MAIN_COMPOSE_FILE ?= $(MAIN_PROJECT_DIR)/docker-compose.yml
+SERVER_REGISTRY_IMAGE ?= ghcr.io/opt-dohun/haxwar:latest
 
 # LocalStack 컨테이너 기동 및 중지
 localstack-up:
@@ -190,11 +193,23 @@ agones-uninstall:
 
 # ── Kubernetes 제어 명령어 ──
 
-# 메인 프로젝트의 docker 이미지를 빌드하여 k3d 클러스터에 로드
-k3d-import-server:
-	@echo "=== C--HaxWar 프로젝트 빌드 및 k3d 업로드 시작 ==="
+# 서브모듈 초기화 및 업데이트
+init-submodule:
+	@echo "=== HaxWar 서브모듈 초기화 및 업데이트 ==="
+	git submodule update --init --recursive
+
+# 메인 프로젝트의 docker 이미지를 로컬(서브모듈)에서 빌드하여 k3d 클러스터에 로드
+k3d-import-server: init-submodule
+	@echo "=== HaxWar 프로젝트 빌드 및 k3d 업로드 시작 ==="
 	cd $(MAIN_PROJECT_DIR) && \
 	docker build -t hexwar-server-1:latest -f src/HexWar.Server/Dockerfile . && \
+	k3d image import hexwar-server-1:latest -c $(K3D_CLUSTER_NAME)
+
+# 미리 빌드된 레지스트리 이미지를 가져와 k3d 클러스터에 로드
+k3d-pull-server:
+	@echo "=== 원격 레지스트리에서 서버 이미지 Pull 및 k3d 업로드 시작 ==="
+	docker pull $(SERVER_REGISTRY_IMAGE)
+	docker tag $(SERVER_REGISTRY_IMAGE) hexwar-server-1:latest
 	k3d image import hexwar-server-1:latest -c $(K3D_CLUSTER_NAME)
 
 # ── Exporter 및 K8s 모니터링 이식 제어 명령어 ──
@@ -293,8 +308,8 @@ k3d-recreate-all: k3d-delete clean
 	$(MAKE) setup-all
 	# 3. K3d 클러스터 재생성
 	$(MAKE) k3d-create
-	# 4. 소스코드 이미지 빌드 및 K3s 클러스터 내부 적재
-	$(MAKE) k3d-import-server
+	# 4. 소스코드 이미지 빌드(또는 Pull) 및 K3s 클러스터 내부 적재
+	$(MAKE) k3d-pull-server
 	$(MAKE) k3d-import-exporter
 	# 5. 오토스케일러 Helm 차트 배포
 	$(MAKE) helm-install
@@ -316,8 +331,8 @@ k3d-recreate-all: k3d-delete clean
 # ── 기존 클러스터 환경 유지 및 소스/설정만 빠르고 가볍게 재배포 ──
 k3d-update-all:
 	@echo "=== [업데이트] 클러스터를 파괴하지 않고 코드와 설정만 최신으로 덮어씁니다. ==="
-	# 1. 소스코드 변경사항 빌드 및 k3d 업로드
-	$(MAKE) k3d-import-server
+	# 1. 소스코드 변경사항 빌드(또는 Pull) 및 k3d 업로드
+	$(MAKE) k3d-pull-server
 	$(MAKE) k3d-import-exporter
 	# 2. 모니터링 및 인프라 리소스 업데이트 (Apply)
 	$(MAKE) k8s-monitoring-up
