@@ -205,6 +205,20 @@ kafka-install:
 kafka-uninstall:
 	@echo "=== kafka 클러스터 삭제 ==="
 	kubectl delete -f deploy/logging/kafka-dev.yaml || true
+# minio 구성 및 버킷 생성
+minio-install:
+	@echo "=== MinIO 배포 및 버킷 사전 생성 시작 ==="
+	kubectl apply -f deploy/logging/minio.yaml
+	@echo "=== MinIO 기동 대기 ==="
+	kubectl wait --for=condition=Ready pod -l app=minio -n observability --timeout=120s
+	@echo "=== MinIO 버킷 생성 (quickwit-indexes) ==="
+	kubectl exec -n observability deploy/minio -- mkdir -p /data/quickwit-indexes || true
+	@echo "=== MinIO 구성 완료 ==="
+
+minio-uninstall:
+	@echo "=== MinIO 삭제 ==="
+	kubectl delete -f deploy/logging/minio.yaml || true
+
 # Quickwit 구성 및 대기
 quickwit-install:
 	@echo "=== Quickwit 클러스터 구성 및 설치 시작 ==="
@@ -386,6 +400,8 @@ k3d-recreate-all: k3d-delete clean
 	kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game || true
 	@echo "kafka 클러스터 생성"
 	$(MAKE) kafka-install
+	@echo "minio 클러스터 생성"
+	$(MAKE) minio-install
 	@echo "quickwit 클러스터 생성"
 	$(MAKE) quickwit-install
 	@echo "vector 수집 에이전트 구성"
