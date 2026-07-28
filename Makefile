@@ -211,11 +211,11 @@ quickwit-install:
 	@echo "=== Quickwit 클러스터 설치 완료 ==="
 	@echo "=== Quickwit 인덱스 생성 시작 ==="
 	kubectl cp deploy/logging/quickwit-index-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
-	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit index create -f /tmp/config.yaml
+	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit index create --index-config /tmp/config.yaml
 	@echo "=== Quickwit 인덱스 생성 완료 ==="
 	@echo "=== Quickwit 소스 생성 시작 ==="
 	kubectl cp deploy/logging/quickwit-source-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
-	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit source create -f /tmp/config.yaml
+	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit source create --index game-logs --source-config /tmp/config.yaml
 	@echo "=== Quickwit 소스 생성 완료 ==="
 	@echo "=== Quickwit 클러스터 설치 완료 ==="
 
