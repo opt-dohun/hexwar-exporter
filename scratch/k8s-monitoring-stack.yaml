@@ -99,15 +99,9 @@ data:
         isDefault: false
         editable: true
       - name: Quickwit
-        type: elasticsearch
+        type: quickwit-quickwit-datasource
         access: proxy
-        url: http://quickwit-searcher.observability.svc.cluster.local:7280/api/v1/_elastic
-        database: "[game-logs]-*"
-        jsonData:
-          timeField: "timestamp"
-          esVersion: 70
-          logMessageField: "message"
-          logLevelField: "level"
+        url: http://quickwit-searcher.observability.svc.cluster.local:7280
         version: 1
         editable: true
   dashboards.yml: |
@@ -453,7 +447,7 @@ spec:
     spec:
       containers:
       - name: grafana
-        image: grafana/grafana:11.4.0
+        image: grafana/grafana:latest
         env:
         - name: GF_INSTALL_PLUGINS
           value: "quickwit-quickwit-datasource"

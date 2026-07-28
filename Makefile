@@ -159,7 +159,7 @@ HELM_VALUES_FILE ?= deploy/autoscaler-values.yaml
 
 # Helm 레포지토리 추가 및 업데이트
 helm-repo:
-	helm repo add autoscaler https://kubernetes.github.io/autoscaler
+	helm repo add autoscaler https://kubernetes.github.io/autoscaler || true
 	helm repo update
 
 # cluster-autoscaler 설치
@@ -182,7 +182,7 @@ helm-upgrade:
 # Agones 설치 및 대기
 agones-install:
 	@echo "=== Agones 시스템 설치 시작 ==="
-	helm repo add agones https://agones.dev/chart/stable
+	helm repo add agones https://agones.dev/chart/stable || true
 	helm repo update
 	helm install my-release --namespace agones-system --create-namespace agones/agones
 	@echo "=== Agones 컨트롤러 기동 대기 (최대 120초) ==="
@@ -192,26 +192,22 @@ agones-install:
 # kafka 클러스터 구성 및 대기
 kafka-install:
 	@echo "=== kafka 클러스터 구성 및 설치 시작 ==="
-	helm repo add bitnami https://charts.bitnami.com/bitnami
-	helm repo update
-	helm install kafka bitnami/kafka -n observability -f deploy/logging/kafka-values.yaml
-	@echo "=== kafka 컨트롤러 기동 대기 (최대 120초) ==="
-	kubectl wait --for=condition=Ready pods --all -n observability --timeout=120s
+	kubectl create namespace observability || true
+	kubectl apply -f deploy/logging/kafka-dev.yaml
 	@echo "=== kafka 클러스터 설치 완료 ==="
 
 # kafka 클러스터 삭제
 kafka-uninstall:
 	@echo "=== kafka 클러스터 삭제 ==="
-	helm uninstall kafka -n observability
-
+	kubectl delete -f deploy/logging/kafka-dev.yaml || true
 # Quickwit 구성 및 대기
 quickwit-install:
 	@echo "=== Quickwit 클러스터 구성 및 설치 시작 ==="
-	helm repo add quickwit https://quickwit-hub.github.io/helm-charts
+	helm repo add quickwit https://quickwit-hub.github.io/helm-charts || true
 	helm repo update
 	helm install quickwit quickwit/quickwit -n observability -f deploy/logging/quickwit-values.yaml
-	@echo "=== Quickwit 클러스터 기동 대기 (최대 120초) ==="
-	kubectl wait --for=condition=Ready pods --all -n observability --timeout=120s
+	@echo "=== Quickwit 클러스터 기동 대기 (최대 300초) ==="
+	kubectl wait --for=condition=Ready pods --all -n observability --timeout=300s
 	@echo "=== Quickwit 클러스터 설치 완료 ==="
 	@echo "=== Quickwit 인덱스 생성 시작 ==="
 	kubectl cp deploy/logging/quickwit-index-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
@@ -410,6 +406,7 @@ k3d-update-all:
 	# 4. 새 이미지가 반영되도록 기존 파드(GameServer 및 Exporter) 강제 재시작
 	@echo "=== 변경된 이미지 반영을 위해 파드를 재시작합니다 ==="
 	kubectl rollout restart deployment hexwar-exporter -n monitoring || true
+	kubectl rollout restart deployment grafana -n monitoring || true
 	kubectl delete gs --all -n game || true
 	@echo "=== [성공] 코드 및 설정 업데이트가 완료되었습니다. ==="
 
