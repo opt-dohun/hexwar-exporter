@@ -27,16 +27,14 @@ indexer:
 metastore:
   replicaCount: 1
 
-# object storage 설정 지정 
-storage:
-  s3:
-    flavor: minio
-    endpoint: "http://minio.observability.svc.cluster.local:9000"
-    access_key_id: "minioadmin"
-    secret_access_key: "minioadmin"
-    force_path_style_access: true
-    bucket: "quickwit-indexes"
-
 # Default config for quickwit node
 config:
   default_index_root_uri: "s3://quickwit-indexes"
+  storage:
+    s3:
+      flavor: minio
+      endpoint: "http://minio.observability.svc.cluster.local:9000"
+      access_key_id: "minioadmin"
+      secret_access_key: "minioadmin"
+      force_path_style_access: true
+      region: "us-east-1"

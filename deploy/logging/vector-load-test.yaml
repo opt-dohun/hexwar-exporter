@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-load-test-config
+  namespace: observability
+data:
+  vector.yaml: |
+    sources:
+      # 초당 막대한 양의 더미 로그(JSON 형식)를 무한 생성합니다.
+      demo:
+        type: demo_logs
+        format: json
+        interval: 0.00001 # 이론상 1초에 100,000건 생성 (로컬 CPU에 따라 실제 속도 결정됨)
+
+    # 생성된 더미 로그에 부하 테스트 식별용 필드를 추가합니다.
+    transforms:
+      add_tags:
+        type: remap
+        inputs: ["demo"]
+        source: |-
+          .test_id = "10M_benchmark"
+          .message = "This is a dummy log for Quickwit benchmark test. " + random_bytes(30)
+          
+    sinks:
+      kafka_sink:
+        type: kafka
+        inputs: ["add_tags"]
+        bootstrap_servers: "kafka.observability.svc.cluster.local:9092"
+        topic: "game-logs"
+        encoding:
+          codec: json
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vector-load-test
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vector-load-test
+  template:
+    metadata:
+      labels:
+        app: vector-load-test
+    spec:
+      containers:
+      - name: vector
+        image: timberio/vector:0.41.X-debian
+        args:
+        - --config
+        - /etc/vector/vector.yaml
+        resources:
+          requests:
+            cpu: 500m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/vector
+      volumes:
+      - name: config
+        configMap:
+          name: vector-load-test-config

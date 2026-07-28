@@ -1,20 +1,14 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: observability
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: minio
   namespace: observability
-  labels:
-    app: minio
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: minio
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
@@ -22,26 +16,18 @@ spec:
     spec:
       containers:
       - name: minio
-        image: minio/minio:latest
+        image: quay.io/minio/minio:latest
         args:
         - server
         - /data
-        - --console-address
-        - ":9001"
         env:
         - name: MINIO_ROOT_USER
-          value: "minioadmin"
+          value: minioadmin
         - name: MINIO_ROOT_PASSWORD
-          value: "minioadmin"
+          value: minioadmin
         ports:
         - containerPort: 9000
         - containerPort: 9001
-        volumeMounts:
-        - name: data
-          mountPath: /data
-      volumes:
-      - name: data
-        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -50,11 +36,7 @@ metadata:
   namespace: observability
 spec:
   ports:
-  - name: api
-    port: 9000
+  - port: 9000
     targetPort: 9000
-  - name: console
-    port: 9001
-    targetPort: 9001
   selector:
     app: minio
