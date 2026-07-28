@@ -1,0 +1,7 @@
+storage:
+  s3:
+    flavor: minio
+    endpoint: "http://minio.observability:9000"
+    access_key_id: "minioadmin"
+    secret_access_key: "minioadmin"
+    force_path_style_access: true

@@ -1,0 +1,42 @@
+# Quickwit Helm Values (quickwit/quickwit)
+# helm install quickwit quickwit/quickwit -n observability -f deploy/logging/quickwit-values.yaml
+
+# searcher: 쿼리 처리 담당 2개 파드 운영
+searcher:
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+# 인덱서 : 로그 샤딩 및 인덱싱 담당 1개 파드 운영
+indexer:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+# quickwit 메타데이터 저장소 minio
+metastore:
+  replicaCount: 1
+
+# object storage 설정 지정 
+storage:
+  s3:
+    flavor: minio
+    endpoint: "http://minio.observability.svc.cluster.local:9000"
+    access_key_id: "minioadmin"
+    secret_access_key: "minioadmin"
+    force_path_style_access: true
+    bucket: "quickwit-indexes"
+
+# Default config for quickwit node
+config:
+  default_index_root_uri: "s3://quickwit-indexes"

@@ -1,0 +1,13 @@
+# quickwit source - 로그 수집 설정
+# filebeat와 같은 로그 수집 에이전트도 정의 가능
+version: 0.7
+source_id: kafka-source
+source_type: kafka
+
+params:
+  topic: game-logs
+  client_params:
+    client.id: quickwit-indexer
+    bootstrap.servers: kafka.observability.svc.cluster.local:9092
+    enable.auto.commit: false
+    auto.offset.reset: earliest

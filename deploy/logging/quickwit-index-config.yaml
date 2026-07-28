@@ -1,0 +1,25 @@
+# Quickwit Index Configuration (game-logs)
+# 이 설정 파일은 Quickwit 컨테이너 내에서 `quickwit index create` 및 `quickwit source create` 명령어로 적용됩니다.
+
+version: 0.7
+index_id: game-logs
+doc_mapping:
+  mode: dynamic
+  # 필드 매핑 정의
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      input_formats: [unix_timestamp, iso8601]
+      output_format: iso8601
+      fast: true
+    - name: message
+      type: text
+      tokenizer: default
+      record: position
+    - name: level
+      type: text
+      tokenizer: raw
+      fast: true
+
+  timestamp_field: timestamp
+

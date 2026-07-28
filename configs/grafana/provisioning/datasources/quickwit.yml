@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: Quickwit
+    type: elasticsearch
+    access: proxy
+    # Quickwit Helm 배포 시 Searcher 서비스 주소 및 Elasticsearch 호환 API 엔드포인트
+    url: http://quickwit-searcher.observability.svc.cluster.local:7280/api/v1/_elastic
+    database: "[game-logs]-*" # 검색할 인덱스 패턴
+    jsonData:
+      timeField: "timestamp"
+      esVersion: 70
+      logMessageField: "message"
+      logLevelField: "level"
+    version: 1
+    editable: true

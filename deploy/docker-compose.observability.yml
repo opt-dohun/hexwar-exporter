@@ -86,6 +86,7 @@ services:
       - prometheus
     environment:
       # 관리자 계정 (개발/데모용 간단한 값. 운영 배포 시 시크릿으로 분리 필요)
+      - GF_INSTALL_PLUGINS=quickwit-quickwit-datasource
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       # 익명 접근 허용 (포트폴리오 데모 시 로그인 생략)

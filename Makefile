@@ -4,7 +4,10 @@
         obs-merged-up obs-merged-down \
         k3d-create k3d-start k3d-delete \
         helm-repo helm-install helm-uninstall helm-upgrade \
-        k8s-pods k3d-import-server k3d-deploy-exporter exporter-restart 
+        k8s-pods k3d-import-server k3d-deploy-exporter exporter-restart \
+		kafka-install kafka-uninstall \
+		quickwit-install quickwit-uninstall \
+		vector-daemonset vector-daemonset-uninstall
 
 # LocalStack 호스트 주소가 필요한 경우 환경 변수 설정 (기본값: http://localhost:4566)
 AWS_ENDPOINT_URL ?= http://localhost:4566
@@ -186,6 +189,61 @@ agones-install:
 	kubectl wait --for=condition=Ready pods --all -n agones-system --timeout=120s
 	@echo "=== Agones 시스템 설치 완료 ==="
 
+# kafka 클러스터 구성 및 대기
+kafka-install:
+	@echo "=== kafka 클러스터 구성 및 설치 시작 ==="
+	helm repo add bitnami https://charts.bitnami.com/bitnami
+	helm repo update
+	helm install kafka bitnami/kafka -n observability -f deploy/logging/kafka-values.yaml
+	@echo "=== kafka 컨트롤러 기동 대기 (최대 120초) ==="
+	kubectl wait --for=condition=Ready pods --all -n observability --timeout=120s
+	@echo "=== kafka 클러스터 설치 완료 ==="
+
+# kafka 클러스터 삭제
+kafka-uninstall:
+	@echo "=== kafka 클러스터 삭제 ==="
+	helm uninstall kafka -n observability
+
+# Quickwit 구성 및 대기
+quickwit-install:
+	@echo "=== Quickwit 클러스터 구성 및 설치 시작 ==="
+	helm repo add quickwit https://quickwit-hub.github.io/helm-charts
+	helm repo update
+	helm install quickwit quickwit/quickwit -n observability -f deploy/logging/quickwit-values.yaml
+	@echo "=== Quickwit 클러스터 기동 대기 (최대 120초) ==="
+	kubectl wait --for=condition=Ready pods --all -n observability --timeout=120s
+	@echo "=== Quickwit 클러스터 설치 완료 ==="
+	@echo "=== Quickwit 인덱스 생성 시작 ==="
+	kubectl cp deploy/logging/quickwit-index-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
+	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit index create -f /tmp/config.yaml
+	@echo "=== Quickwit 인덱스 생성 완료 ==="
+	@echo "=== Quickwit 소스 생성 시작 ==="
+	kubectl cp deploy/logging/quickwit-source-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
+	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit source create -f /tmp/config.yaml
+	@echo "=== Quickwit 소스 생성 완료 ==="
+	@echo "=== Quickwit 클러스터 설치 완료 ==="
+
+# Vector 데몬셋 배포
+vector-daemonset:
+	@echo "=== Vector 데몬셋 배포 시작 ==="
+	kubectl apply -f deploy/logging/vector-configmap.yaml
+	kubectl apply -f deploy/logging/vector-daemonset.yaml
+	@echo "=== Vector 데몬셋 배포 완료 ==="
+
+# Vector 데몬셋 삭제
+vector-daemonset-uninstall:
+	@echo "=== Vector 데몬셋 삭제 시작 ==="
+	kubectl delete -f deploy/logging/vector-daemonset.yaml
+	kubectl delete -f deploy/logging/vector-configmap.yaml
+	@echo "=== Vector 데몬셋 삭제 완료 ==="
+
+
+# Quickwit 삭제
+quickwit-uninstall:
+	@echo "=== Quickwit 클러스터 삭제 ==="
+	helm uninstall quickwit -n observability
+	
+
 # Agones 삭제
 agones-uninstall:
 	@echo "=== Agones 시스템 삭제 ==="
@@ -325,6 +383,13 @@ k3d-recreate-all: k3d-delete clean
 	@echo "=== Agones SDK ServiceAccount 생성 및 권한 부여 ==="
 	kubectl create serviceaccount agones-sdk -n game || true
 	kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game || true
+	@echo "kafka 클러스터 생성"
+	$(MAKE) kafka-install
+	@echo "quickwit 클러스터 생성"
+	$(MAKE) quickwit-install
+	@echo "vector 수집 에이전트 구성"
+	$(MAKE) vector-daemonset
+	@echo "hexwar game 서버 배포"
 	$(MAKE) k8s-server-up
 	@echo "=== [성공] 모든 시스템이 완전 재기동 및 복구되었습니다. ==="
 

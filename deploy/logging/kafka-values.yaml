@@ -1,0 +1,27 @@
+# Bitnami Kafka Helm Chart Values (for testing/development)
+# helm install kafka oci://registry-1.docker.io/bitnamicharts/kafka -n observability -f deploy/logging/kafka-values.yaml
+controller:
+  replicaCount: 1
+
+broker:
+  replicaCount: 1
+
+# 단일 클러스터 배포 zookeeper 제거,kraft 사용
+kraft:
+  enabled: true
+
+listeners:
+  client:
+    protocol: PLAINTEXT
+  controller:
+    protocol: PLAINTEXT
+  interbroker:
+    protocol: PLAINTEXT
+
+persistence:
+  enabled: false
+
+# Auto-create topics for quickwit if they don't exist
+extraEnvVars:
+  - name: KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE
+    value: "true"
