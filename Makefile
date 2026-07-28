@@ -194,6 +194,11 @@ kafka-install:
 	@echo "=== kafka 클러스터 구성 및 설치 시작 ==="
 	kubectl create namespace observability || true
 	kubectl apply -f deploy/logging/kafka-dev.yaml
+	@echo "=== kafka 기동 대기 ==="
+	sleep 5
+	kubectl wait --for=condition=Ready pod/kafka-0 -n observability --timeout=120s
+	@echo "=== game-logs 토픽 사전 생성 ==="
+	kubectl exec -n observability kafka-0 -- /opt/kafka/bin/kafka-topics.sh --create --topic game-logs --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 --if-not-exists || true
 	@echo "=== kafka 클러스터 설치 완료 ==="
 
 # kafka 클러스터 삭제
