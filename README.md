@@ -106,27 +106,33 @@ C#/.NET 기반의 실시간 분산 게임 서버(HaxWar)의 상태를 주기적�
 
 
 
-## 로컬 실행 방법
+## 🚀 로컬 실행 방법
 
-로컬 k3d 클러스터와 LocalStack을 활용하여 전체 오토스케일링 시나리오를 재현할 수 있습니다.
+로컬 k3d 클러스터와 LocalStack을 활용하여 전체 오토스케일링 및 관측 파이프라인 시나리오를 재현할 수 있습니다.  
+클러스터가 미구성된 아무것도 없는 환경(Clean state)부터 일부 리소스가 누락/누수된 환경에서도 `make` 명령어 하나로 명확하고 안전하게 자동 구축 및 업데이트됩니다.
 
 ```bash
-# 1. 전체 환경 자동 구축(초기 구축)
+# 0. 인프라 저장소 클론 및 이동
+git clone https://github.com/opt-dohun/hexwar-exporter.git
+cd hexwar-exporter
+
+# 1. 전체 환경 자동 구축 (클러스터 완전 재구축 및 멱등성 보장)
 make k3d-recreate-all
 
-# 1-1. 변경사항 적용 (재배포)
+# 1-1. 변경사항 적용 (클러스터 유지 후 소스/설정만 빠른 재배포)
 make k3d-update-all
 
-# 2. 부하 테스트 유도 (수평 확장)
+# 2. 부하 테스트 유도 (게임 서버 수평 확장)
 make scale-load
 
-# 3. Grafana 대시보드 확인
+# 3. Grafana 대시보드 및 서비스 확인 (포트포워딩)
 make tunnel-up
-# → http://localhost:3000 접속 (admin/admin)
-# → http://localhost:5002 접속 (게임 페이지) 
+# → http://localhost:3000 접속 (Grafana 대시보드: admin / admin)
+# → http://localhost:5002 접속 (게임 페이지)
 
-# 4. 리소스 정리
+# 4. 리소스 정리 및 환경 초기화
 make scale-reset
+make tunnel-down
 make k3d-delete
 make clean
 ```

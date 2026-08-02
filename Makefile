@@ -139,17 +139,30 @@ K3D_CLUSTER_NAME ?= hexwar-cluster
 K3D_SERVERS ?= 1
 K3D_OPTS ?= 
 
-# k3d 클러스터 생성 (추가 옵션을 줄 수 있음)
-# 예: make k3d-create K3D_OPTS="--port 8080:80@loadbalancer"
+# K8s 필수 네임스페이스 사전 생성 (아이동등 보장)
+init-namespaces:
+	@echo "=== K8s 필수 네임스페이스 생성 및 확인 ==="
+	@kubectl create namespace game 2>/dev/null || true
+	@kubectl create namespace monitoring 2>/dev/null || true
+	@kubectl create namespace observability 2>/dev/null || true
+	@kubectl create namespace hexwar-infra 2>/dev/null || true
+	@kubectl create namespace agones-system 2>/dev/null || true
+
+# k3d 클러스터 생성 (이미 존재하면 스킵)
 k3d-create:
-	k3d cluster create $(K3D_CLUSTER_NAME) --servers $(K3D_SERVERS) $(K3D_OPTS)
+	@if ! k3d cluster list $(K3D_CLUSTER_NAME) 2>/dev/null | grep -q "$(K3D_CLUSTER_NAME)"; then \
+		echo "=== k3d 클러스터 '$(K3D_CLUSTER_NAME)' 생성 시작 ==="; \
+		k3d cluster create $(K3D_CLUSTER_NAME) --servers $(K3D_SERVERS) $(K3D_OPTS); \
+	else \
+		echo "=== k3d 클러스터 '$(K3D_CLUSTER_NAME)'가 이미 존재합니다. ==="; \
+	fi
 
 k3d-start:
-	k3d cluster start $(K3D_CLUSTER_NAME)
+	-k3d cluster start $(K3D_CLUSTER_NAME) 2>/dev/null || true
 
-# k3d 클러스터 삭제
+# k3d 클러스터 삭제 (없어도 에러 없이 통과)
 k3d-delete:
-	k3d cluster delete $(K3D_CLUSTER_NAME)
+	-k3d cluster delete $(K3D_CLUSTER_NAME) 2>/dev/null || true
 
 # ── Helm 차트 제어 명령어 ──
 
@@ -162,16 +175,19 @@ helm-repo:
 	helm repo add autoscaler https://kubernetes.github.io/autoscaler || true
 	helm repo update
 
-# cluster-autoscaler 설치
-helm-install: helm-repo
+# cluster-autoscaler 설치 및 덮어쓰기
+helm-install: helm-repo init-namespaces
 	helm install cluster-autoscaler autoscaler/cluster-autoscaler \
 		-f $(HELM_VALUES_FILE) \
 		-n $(HELM_NAMESPACE) \
-		--create-namespace
+		--create-namespace 2>/dev/null || \
+	helm upgrade cluster-autoscaler autoscaler/cluster-autoscaler \
+		-f $(HELM_VALUES_FILE) \
+		-n $(HELM_NAMESPACE)
 
 # cluster-autoscaler 삭제
 helm-uninstall:
-	helm uninstall cluster-autoscaler -n $(HELM_NAMESPACE)
+	-helm uninstall cluster-autoscaler -n $(HELM_NAMESPACE) 2>/dev/null || true
 
 # cluster-autoscaler 업그레이드
 helm-upgrade:
@@ -180,66 +196,68 @@ helm-upgrade:
 		-n $(HELM_NAMESPACE)
 
 # Agones 설치 및 대기
-agones-install:
+agones-install: init-namespaces
 	@echo "=== Agones 시스템 설치 시작 ==="
 	helm repo add agones https://agones.dev/chart/stable || true
 	helm repo update
-	helm install my-release --namespace agones-system --create-namespace agones/agones
+	helm install my-release --namespace agones-system --create-namespace agones/agones 2>/dev/null || \
+	helm upgrade my-release --namespace agones-system agones/agones
 	@echo "=== Agones 컨트롤러 기동 대기 (최대 120초) ==="
-	kubectl wait --for=condition=Ready pods --all -n agones-system --timeout=120s
+	-kubectl wait --for=condition=Ready pods --all -n agones-system --timeout=120s 2>/dev/null || true
 	@echo "=== Agones 시스템 설치 완료 ==="
 
 # kafka 클러스터 구성 및 대기
-kafka-install:
+kafka-install: init-namespaces
 	@echo "=== kafka 클러스터 구성 및 설치 시작 ==="
-	kubectl create namespace observability || true
 	kubectl apply -f deploy/logging/kafka-dev.yaml
 	@echo "=== kafka 기동 대기 ==="
 	sleep 5
-	kubectl wait --for=condition=Ready pod/kafka-0 -n observability --timeout=120s
+	-kubectl wait --for=condition=Ready pod/kafka-0 -n observability --timeout=120s 2>/dev/null || true
 	@echo "=== game-logs 토픽 사전 생성 ==="
-	kubectl exec -n observability kafka-0 -- /opt/kafka/bin/kafka-topics.sh --create --topic game-logs --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 --if-not-exists || true
+	-kubectl exec -n observability kafka-0 -- /opt/kafka/bin/kafka-topics.sh --create --topic game-logs --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1 --if-not-exists 2>/dev/null || true
 	@echo "=== kafka 클러스터 설치 완료 ==="
 
 # kafka 클러스터 삭제
 kafka-uninstall:
 	@echo "=== kafka 클러스터 삭제 ==="
-	kubectl delete -f deploy/logging/kafka-dev.yaml || true
+	-kubectl delete -f deploy/logging/kafka-dev.yaml 2>/dev/null || true
+
 # minio 구성 및 버킷 생성
-minio-install:
+minio-install: init-namespaces
 	@echo "=== MinIO 배포 및 버킷 사전 생성 시작 ==="
 	kubectl apply -f deploy/logging/minio.yaml
 	@echo "=== MinIO 기동 대기 ==="
-	kubectl wait --for=condition=Ready pod -l app=minio -n observability --timeout=120s
+	-kubectl wait --for=condition=Ready pod -l app=minio -n observability --timeout=120s 2>/dev/null || true
 	@echo "=== MinIO 버킷 생성 (quickwit-indexes) ==="
-	kubectl exec -n observability deploy/minio -- mkdir -p /data/quickwit-indexes || true
+	-kubectl exec -n observability deploy/minio -- mkdir -p /data/quickwit-indexes 2>/dev/null || true
 	@echo "=== MinIO 구성 완료 ==="
 
 minio-uninstall:
 	@echo "=== MinIO 삭제 ==="
-	kubectl delete -f deploy/logging/minio.yaml || true
+	-kubectl delete -f deploy/logging/minio.yaml 2>/dev/null || true
 
 # Quickwit 구성 및 대기
-quickwit-install:
+quickwit-install: init-namespaces
 	@echo "=== Quickwit 클러스터 구성 및 설치 시작 ==="
 	helm repo add quickwit https://quickwit-hub.github.io/helm-charts || true
 	helm repo update
-	helm install quickwit quickwit/quickwit -n observability -f deploy/logging/quickwit-values.yaml
+	helm install quickwit quickwit/quickwit -n observability -f deploy/logging/quickwit-values.yaml 2>/dev/null || \
+	helm upgrade quickwit quickwit/quickwit -n observability -f deploy/logging/quickwit-values.yaml
 	@echo "=== Quickwit 클러스터 기동 대기 (최대 300초) ==="
-	kubectl wait --for=condition=Ready pods --all -n observability --timeout=300s
+	-kubectl wait --for=condition=Ready pods --all -n observability --timeout=300s 2>/dev/null || true
 	@echo "=== Quickwit 클러스터 설치 완료 ==="
 	@echo "=== Quickwit 인덱스 생성 시작 ==="
-	kubectl cp deploy/logging/quickwit-index-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
-	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit index create --index-config /tmp/config.yaml
+	-kubectl cp deploy/logging/quickwit-index-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml 2>/dev/null || true
+	-kubectl exec -n observability quickwit-searcher-0 -- quickwit index create --index-config /tmp/config.yaml 2>/dev/null || true
 	@echo "=== Quickwit 인덱스 생성 완료 ==="
 	@echo "=== Quickwit 소스 생성 시작 ==="
-	kubectl cp deploy/logging/quickwit-source-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml
-	kubectl exec -n observability -it quickwit-searcher-0 -- quickwit source create --index game-logs --source-config /tmp/config.yaml
+	-kubectl cp deploy/logging/quickwit-source-config.yaml observability/quickwit-searcher-0:/tmp/config.yaml 2>/dev/null || true
+	-kubectl exec -n observability quickwit-searcher-0 -- quickwit source create --index game-logs --source-config /tmp/config.yaml 2>/dev/null || true
 	@echo "=== Quickwit 소스 생성 완료 ==="
 	@echo "=== Quickwit 클러스터 설치 완료 ==="
 
 # Vector 데몬셋 배포
-vector-daemonset:
+vector-daemonset: init-namespaces
 	@echo "=== Vector 데몬셋 배포 시작 ==="
 	kubectl apply -f deploy/logging/vector-configmap.yaml
 	kubectl apply -f deploy/logging/vector-daemonset.yaml
@@ -248,21 +266,19 @@ vector-daemonset:
 # Vector 데몬셋 삭제
 vector-daemonset-uninstall:
 	@echo "=== Vector 데몬셋 삭제 시작 ==="
-	kubectl delete -f deploy/logging/vector-daemonset.yaml
-	kubectl delete -f deploy/logging/vector-configmap.yaml
+	-kubectl delete -f deploy/logging/vector-daemonset.yaml 2>/dev/null || true
+	-kubectl delete -f deploy/logging/vector-configmap.yaml 2>/dev/null || true
 	@echo "=== Vector 데몬셋 삭제 완료 ==="
-
 
 # Quickwit 삭제
 quickwit-uninstall:
 	@echo "=== Quickwit 클러스터 삭제 ==="
-	helm uninstall quickwit -n observability
-	
+	-helm uninstall quickwit -n observability 2>/dev/null || true
 
 # Agones 삭제
 agones-uninstall:
 	@echo "=== Agones 시스템 삭제 ==="
-	helm uninstall my-release -n agones-system
+	-helm uninstall my-release -n agones-system 2>/dev/null || true
 
 # ── Kubernetes 제어 명령어 ──
 
@@ -361,19 +377,19 @@ tunnel-down:
 
 # ── 부하 스케일 테스트 제어 ──
 scale-load:
-	@echo "=== 부하 테스트 유도 (게임 서버 Fleet 80개로 확장) ==="
-	kubectl scale fleet hexwar-server -n game --replicas=80
+	@echo "=== 부하 테스트 유도 (게임 서버 Fleet / Deployment 80개로 확장) ==="
+	-kubectl scale fleet hexwar-server -n game --replicas=80 2>/dev/null || kubectl scale deployment hexwar-server -n game --replicas=80 2>/dev/null || true
 
 scale-reset:
-	@echo "=== 부하 테스트 종료 (게임 서버 Fleet 1개로 원복) ==="
-	kubectl scale fleet hexwar-server -n game --replicas=1
+	@echo "=== 부하 테스트 종료 (게임 서버 Fleet / Deployment 1개로 원복) ==="
+	-kubectl scale fleet hexwar-server -n game --replicas=1 2>/dev/null || kubectl scale deployment hexwar-server -n game --replicas=1 2>/dev/null || true
 
 # ── 엣지 케이스 복구: 전체 인프라 완전 초기화 및 재기동 ──
 k3d-recreate-all: k3d-delete clean
 	@echo "=== [초기화] 전체 가상 환경을 파괴하고 처음부터 완전히 재구축합니다. ==="
 	$(MAKE) localstack-up
 	# 1. LocalStack 기동 대기
-	@until curl -s http://localhost:4566/_localstack/health > /dev/null; do \
+	@until curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; do \
 		echo "Waiting for LocalStack to be Ready..."; \
 		sleep 3; \
 	done
@@ -381,23 +397,25 @@ k3d-recreate-all: k3d-delete clean
 	$(MAKE) setup-all
 	# 3. K3d 클러스터 재생성
 	$(MAKE) k3d-create
-	# 4. 소스코드 이미지 빌드(또는 Pull) 및 K3s 클러스터 내부 적재
+	# 4. K8s 네임스페이스 준비
+	$(MAKE) init-namespaces
+	# 5. 소스코드 이미지 빌드(또는 Pull) 및 K3s 클러스터 내부 적재
 	$(MAKE) k3d-pull-server
 	$(MAKE) k3d-import-exporter
-	# 5. 오토스케일러 Helm 차트 배포
+	# 6. 오토스케일러 Helm 차트 배포
 	$(MAKE) helm-install
-	# 5.5 Agones 컨트롤러 배포
+	# 6.5 Agones 컨트롤러 배포
 	$(MAKE) agones-install
-	# 6. K8s 모니터링 스택 배포
+	# 7. K8s 모니터링 스택 배포
 	$(MAKE) k8s-monitoring-up
-	# 6.5 hexwar-exporter 배포
+	# 7.5 hexwar-exporter 배포
 	$(MAKE) k8s-exporter-up
-	# 7. Redis 클러스터 기동 및 동기화 완료 대기
+	# 8. Redis 클러스터 기동 및 동기화 완료 대기
 	$(MAKE) k8s-redis-up
-	# 8. Agones SDK ServiceAccount 권한 부여 및 게임 서버 배포
+	# 9. Agones SDK ServiceAccount 권한 부여 및 게임 서버 배포
 	@echo "=== Agones SDK ServiceAccount 생성 및 권한 부여 ==="
-	kubectl create serviceaccount agones-sdk -n game || true
-	kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game || true
+	-kubectl create serviceaccount agones-sdk -n game 2>/dev/null || true
+	-kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game 2>/dev/null || true
 	@echo "kafka 클러스터 생성"
 	$(MAKE) kafka-install
 	@echo "minio 클러스터 생성"
@@ -413,6 +431,7 @@ k3d-recreate-all: k3d-delete clean
 # ── 기존 클러스터 환경 유지 및 소스/설정만 빠르고 가볍게 재배포 ──
 k3d-update-all:
 	@echo "=== [업데이트] 클러스터를 파괴하지 않고 코드와 설정만 최신으로 덮어씁니다. ==="
+	$(MAKE) init-namespaces
 	# 1. 소스코드 변경사항 빌드(또는 Pull) 및 k3d 업로드
 	$(MAKE) k3d-pull-server
 	$(MAKE) k3d-import-exporter
@@ -421,14 +440,14 @@ k3d-update-all:
 	$(MAKE) k8s-exporter-up
 	$(MAKE) k8s-redis-up
 	# 3. Agones 권한 부여 및 게임 서버 Fleet 업데이트
-	kubectl create serviceaccount agones-sdk -n game || true
-	kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game || true
+	-kubectl create serviceaccount agones-sdk -n game 2>/dev/null || true
+	-kubectl create rolebinding agones-sdk --clusterrole=agones-sdk --serviceaccount=game:agones-sdk -n game 2>/dev/null || true
 	$(MAKE) k8s-server-up
 	# 4. 새 이미지가 반영되도록 기존 파드(GameServer 및 Exporter) 강제 재시작
 	@echo "=== 변경된 이미지 반영을 위해 파드를 재시작합니다 ==="
-	kubectl rollout restart deployment hexwar-exporter -n monitoring || true
-	kubectl rollout restart deployment grafana -n monitoring || true
-	kubectl delete gs --all -n game || true
+	-kubectl rollout restart deployment hexwar-exporter -n monitoring 2>/dev/null || true
+	-kubectl rollout restart deployment grafana -n monitoring 2>/dev/null || true
+	-kubectl delete gs --all -n game 2>/dev/null || true
 	@echo "=== [성공] 코드 및 설정 업데이트가 완료되었습니다. ==="
 
 
