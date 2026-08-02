@@ -181,19 +181,24 @@ func (c *NodeClient) poll(ctx context.Context) {
 		// 실패 시 서킷 오픈 전이
 		if c.state == stateClosed && c.consecutiveFail >= c.maxFailures {
 			c.state = stateOpen
-			// 지수 백오프 대신 고정 백오프(minBackoff = 5s)로 쿨다운 시간 설정
-			c.nextRetryTime = time.Now().Add(c.minBackoff)
-			c.logger.Warn("서킷 브레이커 OPEN (장애 감지)", "node", c.target.Name, "nextRetry", c.minBackoff.String())
+			c.backoffDuration = c.minBackoff
+			c.nextRetryTime = time.Now().Add(c.backoffDuration)
+			c.logger.Warn("서킷 브레이커 OPEN (장애 감지)", "node", c.target.Name, "nextRetry", c.backoffDuration.String())
 		} else if c.state == stateHalfOpen {
-			// 테스트 호출 상태에서 실패 시 다시 Open으로 복귀 및 고정 쿨다운 재설정
+			// 테스트 호출 상태에서 실패 시 다시 Open으로 복귀 및 대기 시간 점진적 증가 (Exponential Backoff)
 			c.state = stateOpen
-			c.nextRetryTime = time.Now().Add(c.minBackoff)
-			c.logger.Warn("서킷 브레이커 OPEN 유지 (테스트 요청 실패)", "node", c.target.Name, "nextRetry", c.minBackoff.String())
+			c.backoffDuration = c.backoffDuration * 2
+			if c.backoffDuration > c.maxBackoff {
+				c.backoffDuration = c.maxBackoff
+			}
+			c.nextRetryTime = time.Now().Add(c.backoffDuration)
+			c.logger.Warn("서킷 브레이커 OPEN 유지 (테스트 요청 실패, 백오프 증가)", "node", c.target.Name, "nextRetry", c.backoffDuration.String(), "backoff", c.backoffDuration.String())
 		}
 	} else {
-		// 성공 시 서킷 닫기 및 카운터 초기화
+		// 성공 시 서킷 닫기 및 카운터/백오프 초기화
 		c.state = stateClosed
 		c.consecutiveFail = 0
+		c.backoffDuration = c.minBackoff
 		now := time.Now()
 		c.last = SampleResult{
 			Stats:     stats,
